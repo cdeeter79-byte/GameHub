@@ -1,0 +1,59 @@
+version: 2
+
+updates:
+  # npm / pnpm workspace packages
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    groups:
+      expo:
+        patterns:
+          - "expo*"
+          - "@expo/*"
+      supabase:
+        patterns:
+          - "@supabase/*"
+      react-native:
+        patterns:
+          - "react-native*"
+          - "@react-native/*"
+      testing:
+        patterns:
+          - "jest*"
+          - "@types/jest"
+          - "ts-jest"
+          - "jest-expo"
+      devtools:
+        patterns:
+          - "typescript"
+          - "eslint*"
+          - "@typescript-eslint/*"
+          - "prettier*"
+          - "turbo"
+    ignore:
+      # Major version bumps on RN/Expo are too risky to auto-merge
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-router"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - "dependencies"
+      - "automated"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"

@@ -1,0 +1,56 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make GameHub better? We'd love to hear it!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: What problem does this feature solve? What frustration are you experiencing?
+      placeholder: "As a parent with 3 kids in different sports, I find it difficult to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature or improvement you'd like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+
+  - type: textarea
+    id: user_story
+    attributes:
+      label: User Story
+      placeholder: "As a [type of user], I want to [do something], so that [benefit]."
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Low — nice to have
+        - Medium — would use regularly
+        - High — blocking my use of the app
+        - Critical — deal breaker
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any mockups, screenshots, or links to similar features in other apps.

@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out as much detail as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: Describe what happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Open the app
+        2. Navigate to Schedule
+        3. Tap on an event
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - iOS (App)
+        - Android (App)
+        - Mobile Web
+        - Desktop Web
+        - All platforms
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App Version
+      placeholder: "e.g., 1.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: device_os
+    attributes:
+      label: Device / OS
+      placeholder: "e.g., iPhone 15 Pro / iOS 17.2, Chrome 120 / macOS 14"
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Recordings
+      description: Attach any relevant screenshots or a screen recording.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other context, logs, or information that may help.

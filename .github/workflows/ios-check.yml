@@ -1,0 +1,43 @@
+name: iOS Prebuild Check
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prebuild:
+    name: Expo Prebuild (iOS)
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo prebuild iOS
+        run: pnpm --filter @gamehub/app exec expo prebuild --platform ios --clean --no-install
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder
+
+      - name: Verify Xcode project exists
+        run: test -f apps/app/ios/GameHub.xcworkspace/contents.xcworkspacedata || test -f apps/app/ios/GameHub.xcodeproj/project.pbxproj

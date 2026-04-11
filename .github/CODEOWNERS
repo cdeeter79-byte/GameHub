@@ -1,0 +1,11 @@
+# Global owners
+* @cdeeter79-byte
+
+# Docs and legal — require owner review
+/docs/ @cdeeter79-byte
+/legal/ @cdeeter79-byte
+
+# Security-sensitive paths — always require owner review
+/supabase/migrations/ @cdeeter79-byte
+/.github/workflows/ @cdeeter79-byte
+/.github/SECURITY.md @cdeeter79-byte

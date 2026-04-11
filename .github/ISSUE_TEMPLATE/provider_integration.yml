@@ -1,0 +1,99 @@
+name: Provider Integration Request
+description: Request integration with a new sports platform or data provider
+title: "[Provider] "
+labels: ["provider-integration"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us prioritize which platforms to integrate next!
+
+  - type: input
+    id: provider_name
+    attributes:
+      label: Provider Name
+      placeholder: "e.g., TeamSnap, SportsEngine, BAND..."
+    validations:
+      required: true
+
+  - type: input
+    id: provider_url
+    attributes:
+      label: Provider Website / App URL
+      placeholder: "https://..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: integration_type
+    attributes:
+      label: What data would you like to sync?
+      options:
+        - label: Schedule / Events (games, practices)
+        - label: Roster
+        - label: RSVP / Attendance
+        - label: Messaging / Team chat
+        - label: Tournament brackets / standings
+        - label: Location / directions
+
+  - type: dropdown
+    id: official_api
+    attributes:
+      label: Official Public API Available?
+      description: Do you know if this provider has a public developer API?
+      options:
+        - "Yes — I found docs at [add link in additional context]"
+        - "No — API not publicly available"
+        - "Unknown"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: oauth_support
+    attributes:
+      label: OAuth / Login Support
+      options:
+        - "Yes — supports OAuth login"
+        - "API key only"
+        - "No external auth"
+        - "Unknown"
+
+  - type: dropdown
+    id: parent_access
+    attributes:
+      label: Can parents access their own data?
+      description: Or is API access restricted to admins/coaches only?
+      options:
+        - "Yes — parents can access their own data"
+        - "Admin/coach only"
+        - "Unknown"
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority for You
+      options:
+        - Low
+        - Medium
+        - High — I'd switch to GameHub if this was supported
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Your Use Case
+      description: How many of your kids' teams use this platform? What would you sync?
+    validations:
+      required: true
+
+  - type: textarea
+    id: api_docs
+    attributes:
+      label: Links to API Documentation
+      description: Any developer docs, OAuth info, or API reference links you've found.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
