@@ -5,6 +5,7 @@ import { useAuth } from './useAuth';
 
 interface UseUpcomingEventsOptions {
   limit?: number;
+  skip?: boolean;
 }
 
 interface UseUpcomingEventsResult {
@@ -15,15 +16,15 @@ interface UseUpcomingEventsResult {
   refresh: () => Promise<void>;
 }
 
-export function useUpcomingEvents({ limit = 10 }: UseUpcomingEventsOptions = {}): UseUpcomingEventsResult {
+export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEventsOptions = {}): UseUpcomingEventsResult {
   const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!skip);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('PENDING');
   const [lastSyncAt, setLastSyncAt] = useState<Date | undefined>(undefined);
 
   const fetchEvents = useCallback(async () => {
-    if (!user) return;
+    if (!user || skip) return;
     setIsLoading(true);
     setSyncStatus('IN_PROGRESS');
 

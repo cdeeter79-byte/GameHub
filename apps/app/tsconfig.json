@@ -4,15 +4,37 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@gamehub/config": ["../../packages/config/src"],
-      "@gamehub/config/*": ["../../packages/config/src/*"],
-      "@gamehub/domain": ["../../packages/domain/src"],
-      "@gamehub/domain/*": ["../../packages/domain/src/*"],
-      "@gamehub/ui": ["../../packages/ui/src"],
-      "@gamehub/ui/*": ["../../packages/ui/src/*"],
-      "@gamehub/adapters": ["../../packages/adapters/src"],
-      "@gamehub/adapters/*": ["../../packages/adapters/src/*"]
+      "@gamehub/config": [
+        "../../packages/config/src"
+      ],
+      "@gamehub/config/*": [
+        "../../packages/config/src/*"
+      ],
+      "@gamehub/domain": [
+        "../../packages/domain/src"
+      ],
+      "@gamehub/domain/*": [
+        "../../packages/domain/src/*"
+      ],
+      "@gamehub/ui": [
+        "../../packages/ui/src"
+      ],
+      "@gamehub/ui/*": [
+        "../../packages/ui/src/*"
+      ],
+      "@gamehub/adapters": [
+        "../../packages/adapters/src"
+      ],
+      "@gamehub/adapters/*": [
+        "../../packages/adapters/src/*"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.d.ts",
+    "expo-env.d.ts",
+    ".expo/types/**/*.ts"
+  ]
 }

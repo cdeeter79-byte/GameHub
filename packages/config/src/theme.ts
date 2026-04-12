@@ -2,6 +2,10 @@
 // Dark-mode-first, sports-themed
 
 export const colors = {
+  // Convenience aliases
+  white: '#FFFFFF',
+  black: '#000000',
+
   // Primary palette
   primary: {
     50: '#EFF6FF',
