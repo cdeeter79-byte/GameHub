@@ -1,4 +1,6 @@
 import 'react-native-url-polyfill/auto';
+// Global CSS — dark background loads before React hydrates on web
+import '../global.css';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

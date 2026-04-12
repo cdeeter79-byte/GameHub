@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@gamehub/domain';
-import type { Event, SyncStatus } from '@gamehub/domain';
+import type { Event } from '@gamehub/domain';
+import { SyncStatus, EventType, RSVPStatus } from '@gamehub/domain';
 import { useAuth } from './useAuth';
 
 interface UseUpcomingEventsOptions {
@@ -20,13 +21,13 @@ export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEvent
   const { user } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(!skip);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('PENDING');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(SyncStatus.PENDING);
   const [lastSyncAt, setLastSyncAt] = useState<Date | undefined>(undefined);
 
   const fetchEvents = useCallback(async () => {
     if (!user || skip) return;
     setIsLoading(true);
-    setSyncStatus('IN_PROGRESS');
+    setSyncStatus(SyncStatus.IN_PROGRESS);
 
     try {
       const now = new Date().toISOString();
@@ -46,29 +47,29 @@ export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEvent
       const mapped: Event[] = (data ?? []).map((row: Record<string, unknown>) => ({
         id: row['id'] as string,
         title: row['title'] as string,
-        type: row['type'] as Event['type'],
+        type: (row['type'] as EventType) ?? EventType.OTHER,
         teamId: row['team_id'] as string,
-        teamName: row['team_name'] as string ?? '',
-        startAt: new Date(row['start_at'] as string),
-        endAt: new Date(row['end_at'] as string),
-        isCanceled: row['is_canceled'] as boolean ?? false,
-        isRescheduled: row['is_rescheduled'] as boolean ?? false,
-        syncStatus: 'SUCCESS',
+        teamName: (row['team_name'] as string) ?? '',
+        startAt: row['start_at'] as string,   // ISO 8601 string, NOT a Date object
+        endAt: row['end_at'] as string,         // ISO 8601 string, NOT a Date object
+        isCanceled: (row['is_canceled'] as boolean) ?? false,
+        isRescheduled: (row['is_rescheduled'] as boolean) ?? false,
+        syncStatus: SyncStatus.SUCCESS,
         providerId: row['provider_id'] as string | undefined,
         externalId: row['external_id'] as string | undefined,
         location: row['location'] as Event['location'],
         opponent: row['opponent'] as string | undefined,
         tournamentId: row['tournament_id'] as string | undefined,
         tournamentName: row['tournament_name'] as string | undefined,
-        rsvpStatus: (row['attendances'] as Array<{ status: string }>)?.[0]?.status as Event['rsvpStatus'],
-        createdAt: new Date(row['created_at'] as string),
+        rsvpStatus: (row['attendances'] as Array<{ status: RSVPStatus }>)?.[0]?.status,
+        createdAt: row['created_at'] as string,
       }));
 
       setEvents(mapped);
-      setSyncStatus('SUCCESS');
+      setSyncStatus(SyncStatus.SUCCESS);
       setLastSyncAt(new Date());
     } catch {
-      setSyncStatus('FAILED');
+      setSyncStatus(SyncStatus.FAILED);
     } finally {
       setIsLoading(false);
     }

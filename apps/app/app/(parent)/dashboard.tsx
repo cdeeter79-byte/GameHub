@@ -6,66 +6,122 @@ import {
   StyleSheet,
   RefreshControl,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import { colors, spacing, typography, radii } from '@gamehub/config';
-import { EventCard, EmptyState, SyncStatusIndicator } from '@gamehub/ui';
+import { EventCard, SyncStatusIndicator } from '@gamehub/ui';
+import { EventType, Sport, SyncStatus, RSVPStatus } from '@gamehub/domain';
+import type { Event } from '@gamehub/domain';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useUpcomingEvents } from '../../src/hooks/useUpcomingEvents';
-import { useEntitlements } from '../../src/hooks/useEntitlements';
-import type { Event } from '@gamehub/domain';
 
-// Demo events shown to guests so they can explore the UI
+// Hard-coded palette — same approach as login for reliable rendering
+const C = {
+  bg: '#0F172A',
+  surface: '#1E293B',
+  surfaceRaised: '#334155',
+  border: '#334155',
+  text: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textTertiary: '#64748B',
+  primary: '#3B82F6',
+  primaryDark: '#1E3A8A',
+  primaryDeep: '#172554',
+  primaryLight: '#60A5FA',
+  accent: '#10B981',
+  white: '#FFFFFF',
+  warningBg: '#78350F',
+  warningText: '#FCD34D',
+};
+
+// ISO timestamps computed once at module load — stable during dev
+const NOW = Date.now();
+const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+
+// Demo events shown to guests with correct domain model types
 const DEMO_EVENTS: Event[] = [
   {
     id: 'demo-1',
     title: 'Soccer Game vs. Riverside FC',
-    sport: 'soccer',
-    startTime: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000).toISOString(),
-    eventType: 'game',
-    location: { name: 'Riverside Park Field 3', address: '123 Park Ave' },
+    type: EventType.GAME,
+    sport: Sport.SOCCER,
+    startAt: new Date(NOW + 2 * DAY).toISOString(),
+    endAt: new Date(NOW + 2 * DAY + 90 * 60 * 1000).toISOString(),
+    location: {
+      name: 'Riverside Park Field 3',
+      address: '123 Park Ave',
+      city: 'Riverside',
+      state: 'CA',
+      country: 'US',
+    },
     teamId: 'demo-team-1',
     teamName: 'U12 Lightning',
+    opponent: 'Riverside FC',
     providerId: 'teamsnap',
     externalId: 'demo-1',
-    syncStatus: 'synced',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    syncStatus: SyncStatus.SUCCESS,
+    isCanceled: false,
+    isRescheduled: false,
+    rsvpStatus: RSVPStatus.PENDING,
+    createdAt: new Date(NOW - DAY).toISOString(),
   },
   {
     id: 'demo-2',
     title: 'Soccer Practice',
-    sport: 'soccer',
-    startTime: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    eventType: 'practice',
-    location: { name: 'Community Center Field', address: '456 Main St' },
+    type: EventType.PRACTICE,
+    sport: Sport.SOCCER,
+    startAt: new Date(NOW + 4 * DAY).toISOString(),
+    endAt: new Date(NOW + 4 * DAY + HOUR).toISOString(),
+    location: {
+      name: 'Community Center Field',
+      address: '456 Main St',
+      city: 'Springfield',
+      state: 'CA',
+      country: 'US',
+    },
     teamId: 'demo-team-1',
     teamName: 'U12 Lightning',
     providerId: 'teamsnap',
     externalId: 'demo-2',
-    syncStatus: 'synced',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    syncStatus: SyncStatus.SUCCESS,
+    isCanceled: false,
+    isRescheduled: false,
+    rsvpStatus: RSVPStatus.ATTENDING,
+    createdAt: new Date(NOW - DAY).toISOString(),
   },
   {
     id: 'demo-3',
     title: 'Hockey Game vs. Eagles',
-    sport: 'hockey',
-    startTime: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000 + 75 * 60 * 1000).toISOString(),
-    eventType: 'game',
-    location: { name: 'Ice Arena Rink 2', address: '789 Ice Way' },
+    type: EventType.GAME,
+    sport: Sport.HOCKEY,
+    startAt: new Date(NOW + 5 * DAY).toISOString(),
+    endAt: new Date(NOW + 5 * DAY + 75 * 60 * 1000).toISOString(),
+    location: {
+      name: 'Ice Arena Rink 2',
+      address: '789 Ice Way',
+      city: 'Frostfield',
+      state: 'MN',
+      country: 'US',
+    },
     teamId: 'demo-team-2',
     teamName: 'Peewee Sharks',
+    opponent: 'Eagles',
     providerId: 'sportsengine',
     externalId: 'demo-3',
-    syncStatus: 'synced',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    syncStatus: SyncStatus.SUCCESS,
+    isCanceled: false,
+    isRescheduled: false,
+    rsvpStatus: RSVPStatus.PENDING,
+    createdAt: new Date(NOW - DAY).toISOString(),
   },
 ];
+
+function getGreeting(hour: number): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function DashboardScreen() {
   const { user, session } = useAuth();
@@ -75,10 +131,20 @@ export default function DashboardScreen() {
     limit: 10,
     skip: isGuest,
   });
-  const { isPremium } = useEntitlements();
+
   const [refreshing, setRefreshing] = useState(false);
 
   const events = isGuest ? DEMO_EVENTS : liveEvents;
+  const hour = new Date().getHours();
+  const firstName = user?.user_metadata?.['full_name']
+    ? (user.user_metadata['full_name'] as string).split(' ')[0]
+    : null;
+
+  const greeting = isGuest
+    ? 'Welcome to GameHub!'
+    : firstName
+      ? `${getGreeting(hour)}, ${firstName}!`
+      : `${getGreeting(hour)}!`;
 
   async function onRefresh() {
     if (isGuest) return;
@@ -87,55 +153,56 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }
 
-  function handleEventPress(_event: Event) {
+  function handleEventPress(event: Event) {
     if (isGuest) {
       router.push('/(auth)/login');
       return;
     }
-    router.push(`/(parent)/schedule/${_event.id}`);
+    router.push(`/(parent)/schedule/${event.id}`);
   }
-
-  const greeting = user?.user_metadata?.['full_name']
-    ? `Hey, ${(user.user_metadata['full_name'] as string).split(' ')[0]}!`
-    : isGuest
-      ? 'Welcome to GameHub!'
-      : 'Welcome back!';
 
   return (
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary[400]}
-        />
+        !isGuest ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={C.primary}
+          />
+        ) : undefined
       }
     >
-      {/* Guest banner */}
+      {/* ── Guest banner ──────────────────────────────────────────────── */}
       {isGuest && (
         <TouchableOpacity
           style={styles.guestBanner}
           onPress={() => router.push('/(auth)/login')}
           accessibilityRole="button"
-          accessibilityLabel="Sign in to connect your real schedules"
+          accessibilityLabel="Sign in to connect your real sports schedules"
+          activeOpacity={0.85}
         >
-          <View style={styles.guestBannerInner}>
+          <View style={styles.guestBannerContent}>
             <Text style={styles.guestBannerTitle}>You're browsing with sample data</Text>
             <Text style={styles.guestBannerSub}>
-              Sign in to connect TeamSnap, SportsEngine, and more →
+              Tap to sign in and connect TeamSnap, SportsEngine & more →
             </Text>
           </View>
         </TouchableOpacity>
       )}
 
-      {/* Header */}
+      {/* ── Header ────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerLeft}>
           <Text style={styles.greeting}>{greeting}</Text>
           <Text style={styles.subtitle}>
-            {isGuest ? '3 upcoming events (demo)' : "Here's what's coming up"}
+            {isGuest
+              ? `${DEMO_EVENTS.length} upcoming events (demo)`
+              : events.length === 0 && !isLoading
+                ? 'No upcoming events'
+                : "Here's what's coming up"}
           </Text>
         </View>
         {!isGuest && (
@@ -147,52 +214,65 @@ export default function DashboardScreen() {
         )}
       </View>
 
-      {/* Upcoming events */}
+      {/* ── Upcoming events ────────────────────────────────────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Upcoming Events</Text>
+        <Text style={styles.sectionLabel}>Upcoming Events</Text>
 
         {!isGuest && isLoading && liveEvents.length === 0 ? (
-          <View style={styles.loadingPlaceholder}>
+          <View style={styles.loadingWrap}>
             <Text style={styles.loadingText}>Loading your schedule…</Text>
           </View>
         ) : events.length === 0 ? (
-          <EmptyState
-            icon="📅"
-            title="No upcoming events"
-            description="Connect a sports platform or add events manually to get started."
-            action={{
-              label: 'Connect a Platform',
-              onPress: () => router.push('/(shared)/provider-connect/'),
-            }}
-          />
-        ) : (
-          <View style={styles.eventList}>
-            {events.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                onPress={() => handleEventPress(event)}
-                onRSVPPress={() => handleEventPress(event)}
-              />
-            ))}
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyEmoji}>📅</Text>
+            <Text style={styles.emptyTitle}>No upcoming events</Text>
+            <Text style={styles.emptyDesc}>
+              Connect a sports platform or add events manually to get started.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyAction}
+              onPress={() => router.push('/(shared)/provider-connect/')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.emptyActionText}>Connect a Platform</Text>
+            </TouchableOpacity>
           </View>
+        ) : (
+          events.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              onPress={() => handleEventPress(event)}
+              onRSVPPress={() => handleEventPress(event)}
+            />
+          ))
         )}
       </View>
 
-      {/* Guest CTA at bottom */}
+      {/* ── Guest bottom CTA ──────────────────────────────────────────── */}
       {isGuest && (
         <View style={styles.guestCTA}>
-          <Text style={styles.guestCTATitle}>Ready to connect your real schedules?</Text>
+          <Text style={styles.guestCTAEmoji}>🏆</Text>
+          <Text style={styles.guestCTATitle}>
+            Ready to connect your real schedules?
+          </Text>
+          <Text style={styles.guestCTADesc}>
+            Link TeamSnap, SportsEngine, ICS feeds, and more — all in one place.
+          </Text>
           <TouchableOpacity
             style={styles.guestCTAButton}
             onPress={() => router.push('/(auth)/login')}
             accessibilityRole="button"
+            activeOpacity={0.85}
           >
             <Text style={styles.guestCTAButtonText}>Create Free Account</Text>
           </TouchableOpacity>
-          <Text style={styles.guestCTANote}>
-            Supports TeamSnap, SportsEngine, iCalendar feeds, and more
-          </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(auth)/login')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.guestCTASignIn}>Already have an account? Sign in</Text>
+          </TouchableOpacity>
         </View>
       )}
     </ScrollView>
@@ -202,100 +282,158 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.dark.background,
+    backgroundColor: C.bg,
   },
   content: {
-    paddingBottom: spacing[12],
+    paddingBottom: 60,
   },
+
+  // ── Guest banner ─────────────────────────────────────────────────────────
   guestBanner: {
-    backgroundColor: colors.primary[900],
+    backgroundColor: C.primaryDeep,
     borderBottomWidth: 1,
-    borderBottomColor: colors.primary[800],
-    padding: spacing[4],
+    borderBottomColor: C.primaryDark,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  guestBannerInner: {
-    gap: spacing[1],
+  guestBannerContent: {
+    gap: 2,
   },
   guestBannerTitle: {
-    color: colors.primary[200],
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as '600',
+    color: '#BFDBFE', // primary-200
+    fontSize: 13,
+    fontWeight: '600',
   },
   guestBannerSub: {
-    color: colors.primary[400],
-    fontSize: typography.fontSize.xs,
+    color: '#93C5FD', // primary-300
+    fontSize: 12,
   },
+
+  // ── Header ───────────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    padding: spacing[5],
-    paddingBottom: spacing[3],
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  headerLeft: {
+    flex: 1,
+    gap: 4,
   },
   greeting: {
-    color: colors.dark.text,
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold as '700',
+    color: C.text,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   subtitle: {
-    color: colors.dark.textSecondary,
-    fontSize: typography.fontSize.sm,
-    marginTop: spacing[1],
+    color: C.textSecondary,
+    fontSize: 13,
   },
+
+  // ── Section ──────────────────────────────────────────────────────────────
   section: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
-  sectionTitle: {
-    color: colors.dark.textSecondary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as '600',
+  sectionLabel: {
+    color: C.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing[3],
+    letterSpacing: 1,
+    marginBottom: 12,
   },
-  eventList: {
-    gap: spacing[3],
-  },
-  loadingPlaceholder: {
-    padding: spacing[8],
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+  loadingWrap: {
+    paddingVertical: 40,
     alignItems: 'center',
   },
   loadingText: {
-    color: colors.dark.textTertiary,
-    fontSize: typography.fontSize.sm,
+    color: C.textTertiary,
+    fontSize: 14,
   },
-  guestCTA: {
-    margin: spacing[4],
-    marginTop: spacing[8],
-    backgroundColor: colors.dark.surface,
-    borderRadius: radii.xl,
-    padding: spacing[6],
+
+  // ── Empty state ──────────────────────────────────────────────────────────
+  emptyWrap: {
     alignItems: 'center',
-    gap: spacing[3],
+    paddingVertical: 48,
+    gap: 10,
+  },
+  emptyEmoji: {
+    fontSize: 40,
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    color: C.text,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  emptyDesc: {
+    color: C.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 280,
+  },
+  emptyAction: {
+    marginTop: 8,
+    backgroundColor: C.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  emptyActionText: {
+    color: C.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // ── Guest CTA ─────────────────────────────────────────────────────────────
+  guestCTA: {
+    margin: 16,
+    marginTop: 24,
+    backgroundColor: C.surface,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
     borderWidth: 1,
-    borderColor: colors.dark.border,
+    borderColor: C.border,
+  },
+  guestCTAEmoji: {
+    fontSize: 32,
   },
   guestCTATitle: {
-    color: colors.dark.text,
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold as '700',
+    color: C.text,
+    fontSize: 18,
+    fontWeight: '700',
     textAlign: 'center',
+  },
+  guestCTADesc: {
+    color: C.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 300,
   },
   guestCTAButton: {
-    backgroundColor: colors.primary[600],
-    borderRadius: radii.lg,
-    paddingVertical: spacing[3],
-    paddingHorizontal: spacing[8],
+    backgroundColor: C.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    marginTop: 4,
   },
   guestCTAButtonText: {
-    color: colors.white,
-    fontSize: typography.fontSize.md,
-    fontWeight: typography.fontWeight.semibold as '600',
+    color: C.white,
+    fontSize: 16,
+    fontWeight: '700',
   },
-  guestCTANote: {
-    color: colors.dark.textTertiary,
-    fontSize: typography.fontSize.xs,
-    textAlign: 'center',
+  guestCTASignIn: {
+    color: C.primaryLight,
+    fontSize: 13,
   },
 });
