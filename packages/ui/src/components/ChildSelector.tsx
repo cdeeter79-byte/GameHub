@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { colors, radii, spacing, typography } from '@gamehub/config';
 import type { ChildProfile } from '@gamehub/domain';
-import { Avatar } from '../Avatar';
+import { Avatar } from './Avatar';
 
 export interface ChildSelectorProps {
   children: ChildProfile[];

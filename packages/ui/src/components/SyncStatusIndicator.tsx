@@ -11,11 +11,11 @@ interface SyncStatusIndicatorProps {
 }
 
 const STATUS_CONFIG: Record<SyncStatus, { color: string; label: string; showSpinner?: boolean }> = {
-  SUCCESS: { color: colors.success[500], label: 'Synced' },
+  SUCCESS: { color: colors.accent[500], label: 'Synced' },
   IN_PROGRESS: { color: colors.primary[400], label: 'Syncing…', showSpinner: true },
   PENDING: { color: colors.neutral[500], label: 'Pending' },
   FAILED: { color: colors.error[500], label: 'Sync failed' },
-  PARTIAL: { color: colors.warning[500], label: 'Partially synced' },
+  PARTIAL: { color: colors.accent[400], label: 'Partially synced' },
 };
 
 export function SyncStatusIndicator({ status, lastSyncAt, onRetry }: SyncStatusIndicatorProps) {

@@ -1,60 +1,49 @@
-// Supabase client singleton — platform-safe for Expo (iOS/Android/Web)
-// URL polyfill must be imported before @supabase/supabase-js
-
-import 'react-native-url-polyfill/auto';
+// Supabase client singleton — platform-safe for Expo (iOS/Android/Web + SSR)
 
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // ─── Environment Variables ─────────────────────────────────────────────────────
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-if (!supabaseUrl) {
-  throw new Error(
-    '[GameHub] EXPO_PUBLIC_SUPABASE_URL is not set. ' +
-      'Add it to your .env file or app.config.ts extra fields.',
-  );
+// ─── Platform-safe Storage Adapter ────────────────────────────────────────────
+// On web (browser): use localStorage
+// On native (iOS/Android): use AsyncStorage
+// On SSR (server-side render during static export): use no-op (no window/storage)
+
+function buildStorageAdapter() {
+  // SSR guard — no storage available during server-side rendering
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  // Web browser — use localStorage
+  if (Platform.OS === 'web') {
+    return undefined; // Supabase uses localStorage by default on web
+  }
+
+  // Native — use AsyncStorage (lazy import to avoid SSR crash)
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  return {
+    getItem: (key: string): Promise<string | null> => AsyncStorage.getItem(key),
+    setItem: (key: string, value: string): Promise<void> => AsyncStorage.setItem(key, value),
+    removeItem: (key: string): Promise<void> => AsyncStorage.removeItem(key),
+  };
 }
-
-if (!supabaseAnonKey) {
-  throw new Error(
-    '[GameHub] EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. ' +
-      'Add it to your .env file or app.config.ts extra fields.',
-  );
-}
-
-// ─── AsyncStorage Auth Adapter ─────────────────────────────────────────────────
-// Supabase uses this to persist session tokens on native platforms.
-// On web, it falls back to localStorage automatically when no storage is provided,
-// but we supply AsyncStorage explicitly so the same bundle works on both.
-
-const ExpoSecureStorageAdapter = {
-  getItem: (key: string): Promise<string | null> => {
-    return AsyncStorage.getItem(key);
-  },
-  setItem: (key: string, value: string): Promise<void> => {
-    return AsyncStorage.setItem(key, value);
-  },
-  removeItem: (key: string): Promise<void> => {
-    return AsyncStorage.removeItem(key);
-  },
-};
 
 // ─── Singleton Client ─────────────────────────────────────────────────────────
 
 export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSecureStorageAdapter,
-    // Automatically refresh the session when it's about to expire
+    storage: buildStorageAdapter(),
     autoRefreshToken: true,
-    // Persist session between app restarts
     persistSession: true,
-    // Disable detecting the session from the URL (not applicable on native)
-    detectSessionInUrl: false,
+    // On web, detect session from URL (for OAuth redirects)
+    detectSessionInUrl: Platform.OS === 'web' && typeof window !== 'undefined',
   },
-  // Enable realtime only when explicitly subscribed — avoids unnecessary connections
   realtime: {
     params: {
       eventsPerSecond: 10,
@@ -72,7 +61,6 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
 
 /**
  * Returns the currently authenticated Supabase user, or null if not signed in.
- * Uses the cached session — does NOT make a network request.
  */
 export async function getSupabaseUser(): Promise<User | null> {
   const {
@@ -81,7 +69,6 @@ export async function getSupabaseUser(): Promise<User | null> {
   } = await supabase.auth.getUser();
 
   if (error) {
-    // Session may be expired or missing — treat as unauthenticated
     console.warn('[GameHub] getSupabaseUser error:', error.message);
     return null;
   }
@@ -91,7 +78,6 @@ export async function getSupabaseUser(): Promise<User | null> {
 
 /**
  * Returns the current session's access token, or null if not signed in.
- * Useful for passing to server-side functions or provider adapters.
  */
 export async function getAccessToken(): Promise<string | null> {
   const {
