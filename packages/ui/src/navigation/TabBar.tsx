@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   },
   icon: {
     fontSize: 22,
-    opacity: 0.5,
+    opacity: 0.65,
   },
   iconActive: {
     opacity: 1,
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 10,
-    color: colors.neutral[500],
+    color: colors.neutral[400],
     marginTop: 2,
     fontWeight: typography.fontWeight.medium,
   },

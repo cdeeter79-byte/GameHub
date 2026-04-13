@@ -35,7 +35,7 @@ export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEvent
         .from('events')
         .select(`
           *,
-          attendances!inner(status, local_intent, wrote_back)
+          attendances(status, local_intent, wrote_back)
         `)
         .gte('start_at', now)
         .order('start_at', { ascending: true })

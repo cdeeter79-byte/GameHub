@@ -17,7 +17,7 @@ export function useSchedule({ childIds = [] }: UseScheduleOptions = {}) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
-    if (!user) return;
+    if (!user) { setIsLoading(false); return; }
     setIsLoading(true);
 
     let query = supabase
