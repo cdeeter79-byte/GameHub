@@ -1,13 +1,28 @@
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@gamehub/domain';
-import { colors, spacing, typography, radii } from '@gamehub/config';
-import { Avatar } from '@gamehub/ui';
 import { useAuth } from '../../src/hooks/useAuth';
-import { useEntitlements } from '../../src/hooks/useEntitlements';
 
-function SettingRow({ label, value, onPress, destructive }: {
-  label: string; value?: string; onPress: () => void; destructive?: boolean;
+const C = {
+  bg: '#0F172A',
+  surface: '#1E293B',
+  border: '#334155',
+  text: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textTertiary: '#64748B',
+  primary: '#3B82F6',
+  primaryLight: '#60A5FA',
+  primaryBg: '#1E3A8A',
+  error: '#EF4444',
+  errorBg: '#7F1D1D',
+  gold: '#FBBF24',
+  goldBg: '#451A03',
+};
+
+function Row({
+  label, value, onPress, chevron = true, destructive = false,
+}: {
+  label: string; value?: string; onPress: () => void; chevron?: boolean; destructive?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -15,22 +30,42 @@ function SettingRow({ label, value, onPress, destructive }: {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      activeOpacity={0.7}
     >
-      <Text style={[styles.rowLabel, destructive && styles.destructive]}>{label}</Text>
-      {value ? <Text style={styles.rowValue}>{value}</Text> : <Text style={styles.chevron}>›</Text>}
+      <Text style={[styles.rowLabel, destructive && styles.rowDestructive]}>{label}</Text>
+      {value
+        ? <Text style={styles.rowValue}>{value}</Text>
+        : chevron && <Text style={styles.chevron}>›</Text>
+      }
     </TouchableOpacity>
+  );
+}
+
+function Section({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      {title && <Text style={styles.sectionLabel}>{title}</Text>}
+      <View style={styles.sectionCard}>{children}</View>
+    </View>
+  );
+}
+
+function Avatar({ name, size = 64 }: { name: string; size?: number }) {
+  const initials = name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  return (
+    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
+      <Text style={[styles.avatarText, { fontSize: size * 0.38 }]}>{initials}</Text>
+    </View>
   );
 }
 
 export default function ProfileScreen() {
   const { user } = useAuth();
-  const { isPremium } = useEntitlements();
-
-  const name = user?.user_metadata?.['full_name'] as string ?? 'Parent';
+  const name = (user?.user_metadata?.['full_name'] as string) ?? 'Parent';
   const email = user?.email ?? '';
 
   async function handleSignOut() {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+    Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
@@ -45,101 +80,105 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-      {/* Avatar / identity */}
-      <View style={styles.avatarSection}>
-        <Avatar
-          name={name}
-          uri={user?.user_metadata?.['avatar_url'] as string | undefined}
-          size="xl"
-        />
+      {/* ── Identity ────────────────────────────────────────────────── */}
+      <View style={styles.identity}>
+        <Avatar name={name} size={72} />
         <Text style={styles.name}>{name}</Text>
         <Text style={styles.email}>{email}</Text>
-        {isPremium ? (
-          <View style={styles.premiumBadge}>
-            <Text style={styles.premiumText}>⭐ Premium</Text>
-          </View>
-        ) : null}
       </View>
 
-      {/* Settings sections */}
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Account</Text>
-        <SettingRow label="Notifications" onPress={() => router.push('/(shared)/notifications')} />
-        <SettingRow label="Connected Platforms" onPress={() => router.push('/(shared)/provider-connect/')} />
-        <SettingRow label="My Children" onPress={() => router.push('/(parent)/children/')} />
-      </View>
+      {/* ── Account ─────────────────────────────────────────────────── */}
+      <Section title="Account">
+        <Row label="My Children" onPress={() => router.push('/(parent)/children/')} />
+        <Row label="Connected Platforms" onPress={() => router.push('/(shared)/provider-connect/')} />
+        <Row label="Notifications" onPress={() => router.push('/(shared)/notifications')} />
+        <Row label="Settings" onPress={() => router.push('/(shared)/settings')} />
+      </Section>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Subscription</Text>
-        {isPremium ? (
-          <SettingRow label="Manage Premium" value="Active" onPress={() => router.push('/(shared)/settings')} />
-        ) : (
-          <SettingRow label="Upgrade to Premium" onPress={() => router.push('/(shared)/settings')} />
-        )}
-        <SettingRow label="Restore Purchases" onPress={() => { /* RevenueCat restore */ }} />
-      </View>
+      {/* ── Subscription ────────────────────────────────────────────── */}
+      <Section title="Subscription">
+        <Row label="Upgrade to Premium" value="Free plan" onPress={() => {}} />
+        <Row label="Restore Purchases" onPress={() => {}} />
+      </Section>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Legal</Text>
-        <SettingRow label="Privacy Policy" onPress={() => {}} />
-        <SettingRow label="Terms of Service" onPress={() => {}} />
-        <SettingRow label="Delete Account" onPress={() => {}} destructive />
-      </View>
+      {/* ── Legal ───────────────────────────────────────────────────── */}
+      <Section title="Legal & Privacy">
+        <Row label="Privacy Policy" onPress={() => {}} />
+        <Row label="Terms of Service" onPress={() => {}} />
+        <Row label="Your Privacy Data" onPress={() => {}} />
+        <Row label="Delete Account" onPress={() => {}} destructive />
+      </Section>
 
-      <View style={styles.section}>
-        <SettingRow label="Sign Out" onPress={handleSignOut} destructive />
-      </View>
+      {/* ── Sign out ────────────────────────────────────────────────── */}
+      <Section>
+        <Row label="Sign Out" onPress={handleSignOut} chevron={false} destructive />
+      </Section>
 
-      <Text style={styles.version}>GameHub v1.0.0</Text>
+      <Text style={styles.version}>GameHub · v1.0.0</Text>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: colors.neutral[950] },
-  content: { paddingBottom: spacing[12] },
-  avatarSection: {
+  scroll: { flex: 1, backgroundColor: C.bg },
+  content: { paddingBottom: 60 },
+
+  // Identity
+  identity: {
     alignItems: 'center',
-    padding: spacing[6],
-    gap: spacing[2],
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 6,
   },
-  name: { color: colors.white, fontSize: typography.fontSize.xl, fontWeight: typography.fontWeight.bold },
-  email: { color: colors.neutral[400], fontSize: typography.fontSize.sm },
-  premiumBadge: {
-    backgroundColor: colors.primary[900],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: radii.full,
-    marginTop: spacing[1],
+  avatar: {
+    backgroundColor: C.primaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
-  premiumText: { color: colors.primary[300], fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.semibold },
-  section: {
-    marginHorizontal: spacing[4],
-    marginBottom: spacing[4],
-    backgroundColor: colors.neutral[900],
-    borderRadius: radii.lg,
+  avatarText: { color: C.primaryLight, fontWeight: '700' },
+  name: { color: C.text, fontSize: 20, fontWeight: '700' },
+  email: { color: C.textSecondary, fontSize: 14 },
+
+  // Section
+  section: { marginHorizontal: 16, marginBottom: 20 },
+  sectionLabel: {
+    color: C.textTertiary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  sectionCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
     overflow: 'hidden',
   },
-  sectionLabel: {
-    color: colors.neutral[500],
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    padding: spacing[3],
-    paddingBottom: spacing[1],
-  },
+
+  // Row
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing[4],
-    borderTopWidth: 1,
-    borderTopColor: colors.neutral[800],
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
   },
-  rowLabel: { color: colors.white, fontSize: typography.fontSize.md },
-  rowValue: { color: colors.neutral[400], fontSize: typography.fontSize.sm },
-  chevron: { color: colors.neutral[500], fontSize: 20 },
-  destructive: { color: colors.error[400] },
-  version: { color: colors.neutral[600], fontSize: typography.fontSize.xs, textAlign: 'center', marginTop: spacing[4] },
+  rowLabel: { color: C.text, fontSize: 15 },
+  rowValue: { color: C.textTertiary, fontSize: 14 },
+  chevron: { color: C.textTertiary, fontSize: 20 },
+  rowDestructive: { color: C.error },
+
+  version: {
+    color: C.textTertiary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
 });

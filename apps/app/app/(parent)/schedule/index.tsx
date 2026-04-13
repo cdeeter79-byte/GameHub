@@ -1,25 +1,39 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { colors, spacing, typography, radii } from '@gamehub/config';
-import { EventCard, ChildSelector, SportFilterBar, EmptyState } from '@gamehub/ui';
+import { EventCard } from '@gamehub/ui';
 import { useSchedule } from '../../../src/hooks/useSchedule';
 import { useChildren } from '../../../src/hooks/useChildren';
 import type { Event } from '@gamehub/domain';
 
-type ViewMode = 'agenda' | 'week' | 'month';
-
-const VIEW_LABELS: Record<ViewMode, string> = {
-  agenda: 'Agenda',
-  week: 'Week',
-  month: 'Month',
+const C = {
+  bg: '#0F172A',
+  surface: '#1E293B',
+  surfaceRaised: '#334155',
+  border: '#334155',
+  text: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textTertiary: '#64748B',
+  primary: '#3B82F6',
+  primaryBg: '#1E3A8A',
+  white: '#FFFFFF',
 };
+
+const SPORT_ICONS: Record<string, string> = {
+  SOCCER: '⚽', BASKETBALL: '🏀', BASEBALL: '⚾', SOFTBALL: '🥎',
+  LACROSSE: '🥍', HOCKEY: '🏒', FOOTBALL: '🏈', VOLLEYBALL: '🏐',
+  TENNIS: '🎾', SWIMMING: '🏊', OTHER: '🏅',
+};
+
+type ViewMode = 'agenda' | 'week';
 
 export default function ScheduleScreen() {
   const [view, setView] = useState<ViewMode>('agenda');
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const { children } = useChildren();
-  const { events, isLoading, sports, selectedSports, toggleSport } = useSchedule({ childIds: selectedChildIds });
+  const { events, isLoading, sports, selectedSports, toggleSport } = useSchedule({
+    childIds: selectedChildIds,
+  });
 
   function toggleChild(id: string) {
     setSelectedChildIds((prev) =>
@@ -32,67 +46,130 @@ export default function ScheduleScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* View mode toggle */}
-      <View style={styles.viewToggle}>
-        {(Object.keys(VIEW_LABELS) as ViewMode[]).map((v) => (
+    <View style={styles.root}>
+      {/* ── View toggle ───────────────────────────────────────────────── */}
+      <View style={styles.viewRow}>
+        {(['agenda', 'week'] as ViewMode[]).map((v) => (
           <TouchableOpacity
             key={v}
             style={[styles.viewTab, view === v && styles.viewTabActive]}
             onPress={() => setView(v)}
             accessibilityRole="tab"
             accessibilityState={{ selected: view === v }}
-            accessibilityLabel={`${VIEW_LABELS[v]} view`}
           >
             <Text style={[styles.viewTabText, view === v && styles.viewTabTextActive]}>
-              {VIEW_LABELS[v]}
+              {v === 'agenda' ? 'Agenda' : 'Week'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Child filter */}
-      {children.length > 0 ? (
-        <ChildSelector
-          children={children}
-          selectedIds={selectedChildIds}
-          onToggle={toggleChild}
-          allowAll
-        />
-      ) : null}
+      {/* ── Child chips ───────────────────────────────────────────────── */}
+      {children.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContent}
+        >
+          <TouchableOpacity
+            style={[
+              styles.chip,
+              selectedChildIds.length === 0 && styles.chipActive,
+            ]}
+            onPress={() => setSelectedChildIds([])}
+            accessibilityRole="button"
+            accessibilityLabel="All kids"
+          >
+            <Text style={[styles.chipText, selectedChildIds.length === 0 && styles.chipTextActive]}>
+              All Kids
+            </Text>
+          </TouchableOpacity>
+          {children.map((child) => {
+            const isSelected = selectedChildIds.includes(child.id);
+            return (
+              <TouchableOpacity
+                key={child.id}
+                style={[styles.chip, isSelected && styles.chipActive]}
+                onPress={() => toggleChild(child.id)}
+                accessibilityRole="button"
+                accessibilityLabel={child.firstName}
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                  {child.firstName}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
-      {/* Sport filter */}
-      <SportFilterBar
-        sports={sports}
-        selectedSports={selectedSports}
-        onToggle={(s) => toggleSport(s === 'all' ? null : s)}
-      />
+      {/* ── Sport filter ──────────────────────────────────────────────── */}
+      {sports.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContent}
+        >
+          <TouchableOpacity
+            style={[styles.chip, selectedSports.length === 0 && styles.chipActive]}
+            onPress={() => toggleSport(null)}
+            accessibilityRole="button"
+            accessibilityLabel="All sports"
+          >
+            <Text style={[styles.chipText, selectedSports.length === 0 && styles.chipTextActive]}>
+              All Sports
+            </Text>
+          </TouchableOpacity>
+          {sports.map((sport) => {
+            const isSelected = selectedSports.includes(sport);
+            return (
+              <TouchableOpacity
+                key={sport}
+                style={[styles.chip, isSelected && styles.chipActive]}
+                onPress={() => toggleSport(sport)}
+                accessibilityRole="button"
+                accessibilityLabel={sport.toLowerCase()}
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text style={styles.sportChipIcon}>{SPORT_ICONS[sport] ?? '🏅'}</Text>
+                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                  {sport.charAt(0) + sport.slice(1).toLowerCase()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
-      {/* Event list */}
+      {/* ── Event list ────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
       >
         {isLoading ? (
           <View style={styles.center}>
-            <Text style={styles.loadingText}>Loading…</Text>
+            <Text style={styles.centerText}>Loading your schedule…</Text>
           </View>
         ) : events.length === 0 ? (
-          <EmptyState
-            icon="📅"
-            title="No events found"
-            description="Try adjusting your filters or connect more platforms."
-          />
-        ) : (
-          <View style={styles.list}>
-            {events.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                onPress={() => handleEventPress(event)}
-              />
-            ))}
+          <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>📅</Text>
+            <Text style={styles.emptyTitle}>No events found</Text>
+            <Text style={styles.emptyDesc}>
+              Try adjusting your filters, or connect more sports platforms.
+            </Text>
           </View>
+        ) : (
+          events.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              onPress={() => handleEventPress(event)}
+              onRSVPPress={() => handleEventPress(event)}
+            />
+          ))
         )}
       </ScrollView>
     </View>
@@ -100,51 +177,70 @@ export default function ScheduleScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.neutral[950],
-  },
-  viewToggle: {
+  root: { flex: 1, backgroundColor: C.bg },
+
+  // View toggle
+  viewRow: {
     flexDirection: 'row',
-    margin: spacing[4],
-    backgroundColor: colors.neutral[900],
-    borderRadius: radii.lg,
-    padding: spacing[1],
+    margin: 16,
+    marginBottom: 8,
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   viewTab: {
     flex: 1,
-    paddingVertical: spacing[2],
+    paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: radii.md,
+    borderRadius: 8,
   },
-  viewTabActive: {
-    backgroundColor: colors.primary[600],
-  },
-  viewTabText: {
-    color: colors.neutral[400],
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
-  },
-  viewTabTextActive: {
-    color: colors.white,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing[4],
-    paddingBottom: spacing[8],
-  },
-  list: {
-    gap: spacing[3],
-  },
-  center: {
-    padding: spacing[8],
+  viewTabActive: { backgroundColor: C.primary },
+  viewTabText: { color: C.textTertiary, fontSize: 14, fontWeight: '500' },
+  viewTabTextActive: { color: C.white, fontWeight: '600' },
+
+  // Chips
+  filterScroll: { maxHeight: 44 },
+  filterContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 8,
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  loadingText: {
-    color: colors.neutral[500],
-    fontSize: typography.fontSize.sm,
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  chipActive: {
+    backgroundColor: C.primaryBg,
+    borderColor: C.primary,
+  },
+  chipText: { color: C.textSecondary, fontSize: 13, fontWeight: '500' },
+  chipTextActive: { color: C.white, fontWeight: '600' },
+  sportChipIcon: { fontSize: 13 },
+
+  // List
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 48 },
+  center: { paddingVertical: 48, alignItems: 'center' },
+  centerText: { color: C.textTertiary, fontSize: 14 },
+  empty: { paddingVertical: 48, alignItems: 'center', gap: 10 },
+  emptyEmoji: { fontSize: 40 },
+  emptyTitle: { color: C.text, fontSize: 17, fontWeight: '700' },
+  emptyDesc: {
+    color: C.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 280,
   },
 });

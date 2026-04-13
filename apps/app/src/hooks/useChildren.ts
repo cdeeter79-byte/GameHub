@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@gamehub/domain';
 import type { ChildProfile } from '@gamehub/domain';
+import { ChildAgeBand } from '@gamehub/domain';
+import type { Sport } from '@gamehub/domain';
 import { useAuth } from './useAuth';
 
 export function useChildren() {
@@ -24,11 +26,11 @@ export function useChildren() {
           parentUserId: row['parent_user_id'] as string,
           firstName: row['first_name'] as string,
           lastName: row['last_name'] as string,
-          birthDate: row['birth_date'] ? new Date(row['birth_date'] as string) : undefined,
-          ageBand: row['age_band'] as ChildProfile['ageBand'],
-          sport: row['sport'] as ChildProfile['sport'],
+          birthDate: row['birth_date'] as string | undefined,   // ISO date string
+          ageBand: (row['age_band'] as ChildAgeBand) ?? ChildAgeBand.UNDER_13,
+          sport: row['sport'] as Sport | undefined,
           avatarUrl: row['avatar_url'] as string | undefined,
-          createdAt: new Date(row['created_at'] as string),
+          createdAt: row['created_at'] as string,
         })),
       );
       setIsLoading(false);
