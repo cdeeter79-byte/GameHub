@@ -15,6 +15,33 @@ import { supabase } from '@gamehub/domain';
 import { EventType, Sport, SyncStatus, RSVPStatus } from '@gamehub/domain';
 import type { Event } from '@gamehub/domain';
 
+// react-native-maps is native-only — guard web at import level
+let MapView: React.ComponentType<{
+  style?: object;
+  initialRegion?: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
+  scrollEnabled?: boolean;
+  zoomEnabled?: boolean;
+  rotateEnabled?: boolean;
+  pitchEnabled?: boolean;
+  children?: React.ReactNode;
+}> | null = null;
+
+let Marker: React.ComponentType<{
+  coordinate: { latitude: number; longitude: number };
+  title?: string;
+}> | null = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+  } catch {
+    // silently fail if module unavailable
+  }
+}
+
 // Palette
 const C = {
   bg: '#0F172A',
@@ -83,11 +110,38 @@ function openMaps(location: Event['location']) {
   Linking.openURL(url);
 }
 
+interface Coords { latitude: number; longitude: number }
+
+async function geocodeAddress(location: Event['location']): Promise<Coords | null> {
+  if (!location) return null;
+
+  // Use stored lat/lng if available
+  if (location.lat != null && location.lng != null) {
+    return { latitude: location.lat, longitude: location.lng };
+  }
+
+  // Fall back to expo-location geocoding (native only)
+  if (Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Location = require('expo-location');
+    const address = `${location.address}, ${location.city}, ${location.state} ${location.country}`;
+    const results = await Location.geocodeAsync(address);
+    if (results.length > 0) {
+      return { latitude: results[0].latitude, longitude: results[0].longitude };
+    }
+  } catch {
+    // silently fail
+  }
+  return null;
+}
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [event, setEvent] = useState<Event | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [rsvpLoading, setRsvpLoading] = useState(false);
+  const [coords, setCoords] = useState<Coords | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -107,7 +161,7 @@ export default function EventDetailScreen() {
       if (!data) throw new Error('Event not found');
 
       const row = data as Record<string, unknown>;
-      setEvent({
+      const loadedEvent: Event = {
         id: row['id'] as string,
         title: row['title'] as string,
         type: (row['type'] as EventType) ?? EventType.OTHER,
@@ -128,7 +182,13 @@ export default function EventDetailScreen() {
         notes: row['notes'] as string | undefined,
         rsvpStatus: (row['attendances'] as Array<{ status: RSVPStatus }>)?.[0]?.status,
         createdAt: row['created_at'] as string,
-      });
+      };
+      setEvent(loadedEvent);
+
+      // Kick off geocoding for the map
+      if (loadedEvent.location) {
+        geocodeAddress(loadedEvent.location).then(setCoords);
+      }
     } catch (err) {
       console.error('[EventDetail] load error:', err);
     } finally {
@@ -139,11 +199,9 @@ export default function EventDetailScreen() {
   async function handleRSVP(status: RSVPStatus) {
     if (!event || rsvpLoading) return;
     setRsvpLoading(true);
-
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-
       await supabase
         .from('attendances')
         .upsert({
@@ -155,14 +213,15 @@ export default function EventDetailScreen() {
           mismatch_detected: false,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'event_id,user_id' });
-
       setEvent((e) => e ? { ...e, rsvpStatus: status } : e);
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Could not update RSVP. Please try again.');
     } finally {
       setRsvpLoading(false);
     }
   }
+
+  // ── Loading / not-found states ─────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -178,11 +237,7 @@ export default function EventDetailScreen() {
       <View style={styles.centered}>
         <Text style={styles.notFoundEmoji}>📭</Text>
         <Text style={styles.notFoundTitle}>Event not found</Text>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-        >
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityRole="button">
           <Text style={styles.backBtnText}>Go back</Text>
         </TouchableOpacity>
       </View>
@@ -193,15 +248,11 @@ export default function EventDetailScreen() {
   const typeLabel = EVENT_TYPE_LABELS[event.type] ?? 'Event';
   const rsvp = event.rsvpStatus ?? RSVPStatus.PENDING;
   const rsvpConfig = RSVP_CONFIG[rsvp];
-  const nextRsvp: RSVPStatus[] = [
-    RSVPStatus.ATTENDING,
-    RSVPStatus.NOT_ATTENDING,
-    RSVPStatus.MAYBE,
-  ];
+  const nextRsvp: RSVPStatus[] = [RSVPStatus.ATTENDING, RSVPStatus.NOT_ATTENDING, RSVPStatus.MAYBE];
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-      {/* ── Status banners ─────────────────────────────────────────── */}
+      {/* ── Status banners ──────────────────────────────────────────── */}
       {event.isCanceled && (
         <View style={styles.cancelBanner}>
           <Text style={styles.cancelBannerText}>⛔ This event has been canceled</Text>
@@ -258,15 +309,9 @@ export default function EventDetailScreen() {
           )}
         </View>
 
-        {/* Location */}
+        {/* Location + map */}
         {event.location && (
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => openMaps(event.location)}
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${event.location.name} in maps`}
-            activeOpacity={0.7}
-          >
+          <View style={styles.card}>
             <Text style={styles.cardLabel}>LOCATION</Text>
             <View style={styles.cardRow}>
               <Text style={styles.cardIcon}>📍</Text>
@@ -275,10 +320,48 @@ export default function EventDetailScreen() {
                 <Text style={styles.cardSecondary}>
                   {event.location.address}, {event.location.city}, {event.location.state}
                 </Text>
-                <Text style={styles.mapsLink}>Open in Maps →</Text>
               </View>
             </View>
-          </TouchableOpacity>
+
+            {/* Map preview — native only */}
+            {MapView != null && Marker != null && coords != null ? (
+              <TouchableOpacity
+                style={styles.mapContainer}
+                onPress={() => openMaps(event.location)}
+                activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel="Open location in maps"
+              >
+                <MapView
+                  style={styles.map}
+                  initialRegion={{
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    latitudeDelta: 0.008,
+                    longitudeDelta: 0.008,
+                  }}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  rotateEnabled={false}
+                  pitchEnabled={false}
+                >
+                  <Marker coordinate={coords} title={event.location.name} />
+                </MapView>
+                <View style={styles.mapOverlay}>
+                  <Text style={styles.mapOverlayText}>Open in Maps →</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              /* Fallback for web or when map unavailable */
+              <TouchableOpacity
+                style={styles.mapsButton}
+                onPress={() => openMaps(event.location)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.mapsButtonText}>🗺  Open in Maps →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         {/* Notes */}
@@ -305,16 +388,12 @@ export default function EventDetailScreen() {
       {!event.isCanceled && (
         <View style={styles.rsvpSection}>
           <Text style={styles.rsvpTitle}>Your RSVP</Text>
-
-          {/* Current status pill */}
           <View style={[styles.rsvpCurrent, { backgroundColor: rsvpConfig.bg, borderColor: rsvpConfig.color }]}>
             <Text style={styles.rsvpCurrentEmoji}>{rsvpConfig.emoji}</Text>
             <Text style={[styles.rsvpCurrentLabel, { color: rsvpConfig.color }]}>
               {rsvpConfig.label}
             </Text>
           </View>
-
-          {/* RSVP options */}
           <View style={styles.rsvpButtons}>
             {nextRsvp.map((status) => {
               const cfg = RSVP_CONFIG[status];
@@ -322,11 +401,7 @@ export default function EventDetailScreen() {
               return (
                 <TouchableOpacity
                   key={status}
-                  style={[
-                    styles.rsvpBtn,
-                    { borderColor: cfg.color },
-                    isSelected && { backgroundColor: cfg.bg },
-                  ]}
+                  style={[styles.rsvpBtn, { borderColor: cfg.color }, isSelected && { backgroundColor: cfg.bg }]}
                   onPress={() => handleRSVP(status)}
                   disabled={rsvpLoading || isSelected}
                   accessibilityRole="button"
@@ -338,9 +413,7 @@ export default function EventDetailScreen() {
                   ) : (
                     <>
                       <Text style={styles.rsvpBtnEmoji}>{cfg.emoji}</Text>
-                      <Text style={[styles.rsvpBtnLabel, { color: cfg.color }]}>
-                        {cfg.label}
-                      </Text>
+                      <Text style={[styles.rsvpBtnLabel, { color: cfg.color }]}>{cfg.label}</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -357,137 +430,94 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
   content: { paddingBottom: 48 },
   centered: {
-    flex: 1,
-    backgroundColor: C.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 24,
+    flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24,
   },
   loadingText: { color: C.textSecondary, fontSize: 14, marginTop: 8 },
   notFoundEmoji: { fontSize: 48 },
   notFoundTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
   backBtn: {
-    marginTop: 8,
-    backgroundColor: C.surface,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: C.border,
+    marginTop: 8, backgroundColor: C.surface, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 20, borderWidth: 1, borderColor: C.border,
   },
   backBtnText: { color: C.primary, fontSize: 15, fontWeight: '600' },
 
   // Banners
   cancelBanner: {
-    backgroundColor: C.errorBg,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: C.error,
+    backgroundColor: C.errorBg, paddingVertical: 10, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: C.error,
   },
   cancelBannerText: { color: '#FCA5A5', fontSize: 14, fontWeight: '600' },
   rescheduledBanner: {
-    backgroundColor: C.warningBg,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: C.warning,
+    backgroundColor: C.warningBg, paddingVertical: 10, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: C.warning,
   },
   rescheduledBannerText: { color: '#FCD34D', fontSize: 14, fontWeight: '600' },
 
   // Hero
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 16,
-    padding: 20,
-    paddingBottom: 16,
-  },
+  hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 16, padding: 20, paddingBottom: 16 },
   heroIcon: { fontSize: 40, lineHeight: 48 },
   heroInfo: { flex: 1, gap: 4 },
-  heroType: {
-    color: C.primary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  heroTitle: {
-    color: C.text,
-    fontSize: 22,
-    fontWeight: '800',
-    lineHeight: 28,
-    letterSpacing: -0.3,
-  },
-  heroOpponent: {
-    color: C.textSecondary,
-    fontSize: 15,
-    fontWeight: '500',
-    marginTop: 2,
-  },
+  heroType: { color: C.primary, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  heroTitle: { color: C.text, fontSize: 22, fontWeight: '800', lineHeight: 28, letterSpacing: -0.3 },
+  heroOpponent: { color: C.textSecondary, fontSize: 15, fontWeight: '500', marginTop: 2 },
 
   // Cards
   cards: { paddingHorizontal: 16, gap: 12 },
   card: {
-    backgroundColor: C.surface,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 10,
+    backgroundColor: C.surface, borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: C.border, gap: 10,
   },
-  cardLabel: {
-    color: C.textTertiary,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
+  cardLabel: { color: C.textTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  cardRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   cardIcon: { fontSize: 16, lineHeight: 22, marginTop: 1 },
   cardPrimary: { color: C.text, fontSize: 15, fontWeight: '600', lineHeight: 22 },
   cardSecondary: { color: C.textSecondary, fontSize: 13, lineHeight: 20, marginTop: 2 },
-  mapsLink: { color: C.primaryLight, fontSize: 13, marginTop: 4, fontWeight: '500' },
   notesText: { color: C.textSecondary, fontSize: 14, lineHeight: 22 },
+
+  // Map
+  mapContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  map: { height: 180, width: '100%' },
+  mapOverlay: {
+    backgroundColor: C.surface,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  mapOverlayText: { color: C.primaryLight, fontSize: 13, fontWeight: '600' },
+
+  mapsButton: {
+    marginTop: 4,
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignSelf: 'flex-start',
+  },
+  mapsButtonText: { color: C.primaryLight, fontSize: 13, fontWeight: '600' },
 
   // RSVP
   rsvpSection: {
-    margin: 16,
-    marginTop: 20,
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 14,
+    margin: 16, marginTop: 20, backgroundColor: C.surface, borderRadius: 16,
+    padding: 20, borderWidth: 1, borderColor: C.border, gap: 14,
   },
   rsvpTitle: { color: C.text, fontSize: 16, fontWeight: '700' },
   rsvpCurrent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+    paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1,
   },
   rsvpCurrentEmoji: { fontSize: 16 },
   rsvpCurrentLabel: { fontSize: 14, fontWeight: '700' },
   rsvpButtons: { flexDirection: 'row', gap: 10 },
   rsvpBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    backgroundColor: 'transparent',
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, backgroundColor: 'transparent',
   },
   rsvpBtnEmoji: { fontSize: 16 },
   rsvpBtnLabel: { fontSize: 13, fontWeight: '600' },
