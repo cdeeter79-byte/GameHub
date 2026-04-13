@@ -1,7 +1,20 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking } from 'react-native';
-import { colors, spacing, typography, radii, PROVIDER_DISPLAY_NAMES, PROVIDER_COLORS, AUTH_STRATEGIES } from '@gamehub/config';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { PROVIDER_DISPLAY_NAMES, PROVIDER_COLORS, AUTH_STRATEGIES } from '@gamehub/config';
 import type { ProviderId } from '@gamehub/config';
 import { CAPABILITY_MATRIX } from '@gamehub/adapters';
+
+const C = {
+  bg: '#0F172A',
+  surface: '#1E293B',
+  border: '#334155',
+  text: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textTertiary: '#64748B',
+  primary: '#3B82F6',
+  accent: '#10B981',
+  warning: '#F59E0B',
+  white: '#FFFFFF',
+};
 
 const PROVIDER_IDS: ProviderId[] = [
   'teamsnap',
@@ -20,65 +33,101 @@ const PROVIDER_IDS: ProviderId[] = [
 
 function getAuthLabel(id: ProviderId): string {
   const strategy = AUTH_STRATEGIES[id];
-  if (strategy === 'oauth2') return 'Connect with OAuth';
-  if (strategy === 'api_key') return 'Enter API Key';
-  if (strategy === 'csv_import') return 'Import CSV';
-  if (strategy === 'ics_url') return 'Add Calendar URL';
-  if (strategy === 'email') return 'Paste Email';
-  return 'Add Manually';
+  if (strategy === 'oauth2') return 'One-tap OAuth connection';
+  if (strategy === 'api_key') return 'Enter your API key';
+  if (strategy === 'csv_import') return 'Import a CSV file';
+  if (strategy === 'ics_url') return 'Paste a calendar feed URL';
+  if (strategy === 'email') return 'Forward a confirmation email';
+  return 'Add events manually';
 }
 
-function getStatusLabel(id: ProviderId): { label: string; color: string } {
+function getCapabilityInfo(id: ProviderId): { label: string; color: string; dot: string } {
   const caps = CAPABILITY_MATRIX[id];
-  if (!caps.supportsOfficialAPI && !caps.supportsCalendarSubscription) {
-    return { label: 'Limited', color: colors.warning[500] };
+  if (caps.supportsRSVPWrite && caps.supportsMessagingWrite) {
+    return { label: 'Full sync', color: C.accent, dot: '●' };
   }
-  if (caps.supportsRSVPWrite || caps.supportsMessagingWrite) {
-    return { label: 'Full sync', color: colors.success[500] };
+  if (caps.supportsOfficialAPI || caps.supportsCalendarSubscription) {
+    return { label: 'Read only', color: C.primary, dot: '●' };
   }
-  return { label: 'Read only', color: colors.primary[400] };
+  return { label: 'Limited', color: C.warning, dot: '●' };
+}
+
+function ProviderRow({ id }: { id: ProviderId }) {
+  const cap = getCapabilityInfo(id);
+  const authLabel = getAuthLabel(id);
+  const brandColor = PROVIDER_COLORS[id] ?? C.textTertiary;
+  const displayName = PROVIDER_DISPLAY_NAMES[id];
+
+  const initials = displayName
+    .split(' ')
+    .map((w: string) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      accessibilityRole="button"
+      accessibilityLabel={`Connect ${displayName}`}
+      activeOpacity={0.75}
+      onPress={() => {
+        // TODO: Route to provider-specific setup flow
+      }}
+    >
+      {/* Brand avatar */}
+      <View style={[styles.brandAvatar, { backgroundColor: brandColor + '22', borderColor: brandColor + '44' }]}>
+        <Text style={[styles.brandInitials, { color: brandColor }]}>{initials}</Text>
+      </View>
+
+      {/* Info */}
+      <View style={styles.rowInfo}>
+        <View style={styles.rowTitleRow}>
+          <Text style={styles.providerName}>{displayName}</Text>
+          <View style={[styles.capBadge, { borderColor: cap.color }]}>
+            <Text style={[styles.capDot, { color: cap.color }]}>{cap.dot}</Text>
+            <Text style={[styles.capLabel, { color: cap.color }]}>{cap.label}</Text>
+          </View>
+        </View>
+        <Text style={styles.authLabel}>{authLabel}</Text>
+      </View>
+
+      <Text style={styles.chevron}>›</Text>
+    </TouchableOpacity>
+  );
 }
 
 export default function ProviderConnectScreen() {
-  function renderProvider({ item }: { item: ProviderId }) {
-    const { label: statusLabel, color: statusColor } = getStatusLabel(item);
-    const authLabel = getAuthLabel(item);
-    const brandColor = PROVIDER_COLORS[item];
-
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        accessibilityRole="button"
-        accessibilityLabel={`Connect ${PROVIDER_DISPLAY_NAMES[item]}, ${statusLabel}`}
-        onPress={() => {
-          // In a real implementation: route to provider-specific OAuth/setup flow
-        }}
-      >
-        <View style={[styles.colorBar, { backgroundColor: brandColor }]} />
-        <View style={styles.cardContent}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.providerName}>{PROVIDER_DISPLAY_NAMES[item]}</Text>
-            <View style={[styles.statusBadge, { borderColor: statusColor }]}>
-              <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-            </View>
-          </View>
-          <Text style={styles.authLabel}>{authLabel}</Text>
-        </View>
-        <Text style={styles.chevron}>›</Text>
-      </TouchableOpacity>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.intro}>
-        Connect your sports platforms to sync schedules, rosters, and messages into GameHub.
-      </Text>
+    <View style={styles.root}>
       <FlatList
         data={PROVIDER_IDS}
         keyExtractor={(item) => item}
-        renderItem={renderProvider}
+        renderItem={({ item }) => <ProviderRow id={item} />}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Connect Platforms</Text>
+            <Text style={styles.headerDesc}>
+              Link your sports apps to pull schedules, RSVPs, and messages into one place.
+              We support 12 providers.
+            </Text>
+            <View style={styles.legend}>
+              <View style={styles.legendItem}>
+                <Text style={[styles.legendDot, { color: C.accent }]}>●</Text>
+                <Text style={styles.legendLabel}>Full sync — schedule + RSVP write-back</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <Text style={[styles.legendDot, { color: C.primary }]}>●</Text>
+                <Text style={styles.legendLabel}>Read only — schedule sync</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <Text style={[styles.legendDot, { color: C.warning }]}>●</Text>
+                <Text style={styles.legendLabel}>Limited — import only</Text>
+              </View>
+            </View>
+          </View>
+        }
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
     </View>
@@ -86,27 +135,79 @@ export default function ProviderConnectScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.neutral[950] },
-  intro: {
-    color: colors.neutral[400],
-    fontSize: typography.fontSize.sm,
-    padding: spacing[4],
-    lineHeight: 20,
+  root: { flex: 1, backgroundColor: C.bg },
+  list: { paddingBottom: 60 },
+
+  header: {
+    padding: 20,
+    paddingBottom: 16,
+    gap: 10,
   },
-  list: { paddingBottom: spacing[10] },
-  card: {
+  headerTitle: {
+    color: C.text,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  headerDesc: {
+    color: C.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  legend: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legendDot: { fontSize: 10 },
+  legendLabel: { color: C.textSecondary, fontSize: 12 },
+
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.neutral[900],
-    overflow: 'hidden',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 14,
+    backgroundColor: C.bg,
   },
-  colorBar: { width: 4, alignSelf: 'stretch' },
-  cardContent: { flex: 1, padding: spacing[4], gap: spacing[1] },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
-  providerName: { color: colors.white, fontSize: typography.fontSize.md, fontWeight: typography.fontWeight.semibold, flex: 1 },
-  statusBadge: { borderWidth: 1, borderRadius: radii.full, paddingHorizontal: spacing[2], paddingVertical: 2 },
-  statusText: { fontSize: 11, fontWeight: typography.fontWeight.medium },
-  authLabel: { color: colors.neutral[500], fontSize: typography.fontSize.sm },
-  chevron: { color: colors.neutral[500], fontSize: 22, paddingRight: spacing[4] },
-  separator: { height: 1, backgroundColor: colors.neutral[800] },
+  brandAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandInitials: { fontSize: 14, fontWeight: '800' },
+
+  rowInfo: { flex: 1, gap: 3 },
+  rowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  providerName: { color: C.text, fontSize: 15, fontWeight: '600', flex: 1 },
+  capBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  capDot: { fontSize: 8 },
+  capLabel: { fontSize: 11, fontWeight: '600' },
+  authLabel: { color: C.textTertiary, fontSize: 13 },
+
+  chevron: { color: C.textTertiary, fontSize: 22 },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.border,
+    marginLeft: 78,
+  },
 });
