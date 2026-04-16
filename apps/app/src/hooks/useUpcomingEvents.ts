@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '@gamehub/domain';
 import type { Event } from '@gamehub/domain';
 import { SyncStatus, EventType, RSVPStatus } from '@gamehub/domain';
@@ -50,6 +51,8 @@ export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEvent
         type: (row['type'] as EventType) ?? EventType.OTHER,
         teamId: row['team_id'] as string,
         teamName: (row['team_name'] as string) ?? '',
+        childProfileId: (row['child_profile_id'] as string | null) ?? undefined,
+        childName: (row['child_name'] as string | null) ?? undefined,
         startAt: row['start_at'] as string,   // ISO 8601 string, NOT a Date object
         endAt: row['end_at'] as string,         // ISO 8601 string, NOT a Date object
         isCanceled: (row['is_canceled'] as boolean) ?? false,
@@ -78,6 +81,13 @@ export function useUpcomingEvents({ limit = 10, skip = false }: UseUpcomingEvent
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  // Refetch when the screen regains focus so RSVP changes made elsewhere show up.
+  useFocusEffect(
+    useCallback(() => {
+      fetchEvents();
+    }, [fetchEvents]),
+  );
 
   return { events, isLoading, syncStatus, lastSyncAt, refresh: fetchEvents };
 }

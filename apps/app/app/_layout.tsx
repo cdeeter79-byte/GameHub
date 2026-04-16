@@ -1,13 +1,8 @@
-// URL polyfill — native only (web has native URL support)
-import { Platform } from 'react-native';
-if (Platform.OS !== 'web') {
-  require('react-native-url-polyfill/auto');
-}
+// URL polyfill must come before any Supabase/fetch usage
+import 'react-native-url-polyfill/auto';
+// Global CSS for web dark background (global.native.ts is a no-op stub)
+import '../global';
 
-// Global CSS for web dark background
-import '../global.css';
-
-import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -17,17 +12,12 @@ import * as SplashScreen from 'expo-splash-screen';
 const BG = '#0F172A';
 const SURFACE = '#1E293B';
 
-// Guard SplashScreen for native only — web has no splash
-if (Platform.OS !== 'web') {
-  SplashScreen.preventAutoHideAsync().catch(() => {});
-}
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  useEffect(() => {
-    if (Platform.OS !== 'web') {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-  }, []);
+  // Splash is hidden by app/index.tsx after the auth check resolves.
+  // Do NOT hide it here — index.tsx returns null while loading, which
+  // would produce a black screen if the splash is already gone.
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: BG }}>
@@ -44,7 +34,6 @@ export default function RootLayout() {
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="(parent)" options={{ headerShown: false }} />
           <Stack.Screen name="(manager)" options={{ headerShown: false }} />
-          <Stack.Screen name="(shared)" options={{ headerShown: false }} />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

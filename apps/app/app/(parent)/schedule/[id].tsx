@@ -142,6 +142,7 @@ export default function EventDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [rsvpLoading, setRsvpLoading] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -168,6 +169,8 @@ export default function EventDetailScreen() {
         sport: row['sport'] as Sport | undefined,
         teamId: row['team_id'] as string,
         teamName: (row['team_name'] as string) ?? '',
+        childProfileId: (row['child_profile_id'] as string | null) ?? undefined,
+        childName: (row['child_name'] as string | null) ?? undefined,
         startAt: row['start_at'] as string,
         endAt: row['end_at'] as string,
         isCanceled: (row['is_canceled'] as boolean) ?? false,
@@ -187,7 +190,11 @@ export default function EventDetailScreen() {
 
       // Kick off geocoding for the map
       if (loadedEvent.location) {
-        geocodeAddress(loadedEvent.location).then(setCoords);
+        setMapLoading(true);
+        geocodeAddress(loadedEvent.location).then((c) => {
+          setCoords(c);
+          setMapLoading(false);
+        });
       }
     } catch (err) {
       console.error('[EventDetail] load error:', err);
@@ -200,11 +207,24 @@ export default function EventDetailScreen() {
     if (!event || rsvpLoading) return;
     setRsvpLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Not authenticated');
+
+      const session = (await supabase.auth.getSession()).data.session;
+
+      // 1. Save locally first so the UI updates immediately.
+      //    Delete-then-insert avoids the NULL child_profile_id conflict issue
+      //    (the unique constraint is on (event_id, user_id, child_profile_id) and
+      //    PostgreSQL treats NULL != NULL, so upsert never resolves the conflict).
       await supabase
         .from('attendances')
-        .upsert({
+        .delete()
+        .eq('event_id', event.id)
+        .eq('user_id', user.id);
+
+      await supabase
+        .from('attendances')
+        .insert({
           event_id: event.id,
           user_id: user.id,
           status,
@@ -212,8 +232,32 @@ export default function EventDetailScreen() {
           wrote_back: false,
           mismatch_detected: false,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'event_id,user_id' });
+        });
+
       setEvent((e) => e ? { ...e, rsvpStatus: status } : e);
+
+      // 2. Write back to the source provider (TeamSnap) in the background
+      if (session && event.providerId === 'teamsnap') {
+        const supabaseUrl = process.env['EXPO_PUBLIC_SUPABASE_URL'] ?? '';
+        fetch(`${supabaseUrl}/functions/v1/rsvp-writeback`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ eventId: event.id, status }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            console.warn('[RSVP writeback] failed:', data);
+          } else {
+            const data = await res.json();
+            console.log('[RSVP writeback] success, wroteBack:', data.wroteBack);
+          }
+        }).catch((err) => {
+          console.warn('[RSVP writeback] network error:', err);
+        });
+      }
     } catch {
       Alert.alert('Error', 'Could not update RSVP. Please try again.');
     } finally {
@@ -251,7 +295,13 @@ export default function EventDetailScreen() {
   const nextRsvp: RSVPStatus[] = [RSVPStatus.ATTENDING, RSVPStatus.NOT_ATTENDING, RSVPStatus.MAYBE];
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
+    >
       {/* ── Status banners ──────────────────────────────────────────── */}
       {event.isCanceled && (
         <View style={styles.cancelBanner}>
@@ -269,7 +319,16 @@ export default function EventDetailScreen() {
         <Text style={styles.heroIcon}>{sportIcon}</Text>
         <View style={styles.heroInfo}>
           <Text style={styles.heroType}>{typeLabel.toUpperCase()}</Text>
-          <Text style={styles.heroTitle}>{event.title}</Text>
+          <View style={styles.heroTitleRow}>
+            <Text style={styles.heroTitle}>{event.title}</Text>
+            {event.childName && (
+              <View style={styles.heroChildPill}>
+                <Text style={styles.heroChildPillText} numberOfLines={1}>
+                  👤 {event.childName}
+                </Text>
+              </View>
+            )}
+          </View>
           {event.opponent && (
             <Text style={styles.heroOpponent}>vs. {event.opponent}</Text>
           )}
@@ -324,7 +383,12 @@ export default function EventDetailScreen() {
             </View>
 
             {/* Map preview — native only */}
-            {MapView != null && Marker != null && coords != null ? (
+            {mapLoading ? (
+              <View style={styles.mapPlaceholder}>
+                <ActivityIndicator color={C.primary} size="small" />
+                <Text style={styles.mapPlaceholderText}>Loading map…</Text>
+              </View>
+            ) : MapView != null && Marker != null && coords != null ? (
               <TouchableOpacity
                 style={styles.mapContainer}
                 onPress={() => openMaps(event.location)}
@@ -348,11 +412,11 @@ export default function EventDetailScreen() {
                   <Marker coordinate={coords} title={event.location.name} />
                 </MapView>
                 <View style={styles.mapOverlay}>
-                  <Text style={styles.mapOverlayText}>Open in Maps →</Text>
+                  <Text style={styles.mapOverlayText}>🗺  Open in Maps →</Text>
                 </View>
               </TouchableOpacity>
             ) : (
-              /* Fallback for web or when map unavailable */
+              /* Fallback for web or when geocoding unavailable */
               <TouchableOpacity
                 style={styles.mapsButton}
                 onPress={() => openMaps(event.location)}
@@ -369,17 +433,6 @@ export default function EventDetailScreen() {
           <View style={styles.card}>
             <Text style={styles.cardLabel}>NOTES</Text>
             <Text style={styles.notesText}>{event.notes}</Text>
-          </View>
-        )}
-
-        {/* Provider */}
-        {event.providerId && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>SOURCE</Text>
-            <View style={styles.cardRow}>
-              <Text style={styles.cardIcon}>🔗</Text>
-              <Text style={styles.cardSecondary}>{event.providerId}</Text>
-            </View>
           </View>
         )}
       </View>
@@ -422,13 +475,31 @@ export default function EventDetailScreen() {
           </View>
         </View>
       )}
+
+      {/* ── Source ──────────────────────────────────────────────────── */}
+      {event.providerId && (
+        <View style={[styles.cards, { marginBottom: 0 }]}>
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>SOURCE</Text>
+            <View style={styles.cardRow}>
+              <Text style={styles.cardIcon}>🔗</Text>
+              <View>
+                <Text style={styles.cardPrimary}>{event.providerId}</Text>
+                {event.externalId && (
+                  <Text style={styles.cardSecondary}>ID: {event.externalId}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
-  content: { paddingBottom: 48 },
+  content: { paddingBottom: 120 },
   centered: {
     flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24,
   },
@@ -458,7 +529,21 @@ const styles = StyleSheet.create({
   heroIcon: { fontSize: 40, lineHeight: 48 },
   heroInfo: { flex: 1, gap: 4 },
   heroType: { color: C.primary, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  heroTitle: { color: C.text, fontSize: 22, fontWeight: '800', lineHeight: 28, letterSpacing: -0.3 },
+  heroTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' },
+  heroTitle: {
+    color: C.text, fontSize: 22, fontWeight: '800', lineHeight: 28, letterSpacing: -0.3,
+    flexShrink: 1,
+  },
+  heroChildPill: {
+    backgroundColor: '#1E3A8A',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: C.primary,
+    marginTop: 4,
+  },
+  heroChildPillText: { color: C.primaryLight, fontSize: 12, fontWeight: '700' },
   heroOpponent: { color: C.textSecondary, fontSize: 15, fontWeight: '500', marginTop: 2 },
 
   // Cards
@@ -492,6 +577,19 @@ const styles = StyleSheet.create({
   },
   mapOverlayText: { color: C.primaryLight, fontSize: 13, fontWeight: '600' },
 
+  mapPlaceholder: {
+    marginTop: 4,
+    height: 80,
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  mapPlaceholderText: { color: C.textTertiary, fontSize: 13 },
   mapsButton: {
     marginTop: 4,
     backgroundColor: C.surfaceRaised,

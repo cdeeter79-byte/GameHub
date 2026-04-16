@@ -14,7 +14,9 @@
     "lint": "eslint app/ src/",
     "test": "jest --passWithNoTests",
     "test:ci": "jest --passWithNoTests --ci --coverage",
-    "clean": "rm -rf dist .expo node_modules/.cache"
+    "clean": "rm -rf dist .expo node_modules/.cache",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@gamehub/adapters": "workspace:*",

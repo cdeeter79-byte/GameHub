@@ -15,14 +15,9 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// React Native Web: resolve .web.tsx/.web.ts before .tsx/.ts
-config.resolver.sourceExts = [
-  'web.tsx',
-  'web.ts',
-  'web.jsx',
-  'web.js',
-  ...config.resolver.sourceExts,
-];
+// Note: Expo's getDefaultConfig already handles web platform resolution.
+// Do NOT prepend web.* extensions here — it causes Metro to resolve web-only
+// files (e.g. DevLoadingView.web.js) on native builds, breaking the simulator.
 
 // Resolve workspace package symlinks
 config.resolver.disableHierarchicalLookup = false;
