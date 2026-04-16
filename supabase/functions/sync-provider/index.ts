@@ -258,16 +258,48 @@ serve(async (req: Request) => {
     const teamsData = await tsGet('/teams/search', accessToken, { user_id: tsUserId });
     const tsTeams = teamsData.collection?.items ?? [];
 
-    // Load the user's children so we can tag events by the matching child (by name).
-    const { data: childRows } = await supabase
-      .from('child_profiles')
-      .select('id, first_name, last_name')
-      .eq('parent_user_id', userId);
-    const userChildren = (childRows ?? []).map((c) => ({
-      id: c['id'] as string,
-      firstName: String(c['first_name'] ?? '').trim().toLowerCase(),
-      lastName: String(c['last_name'] ?? '').trim().toLowerCase(),
-    }));
+    // Load the user's children so we can tag events by the matching child.
+    const userChildren: { id: string; firstName: string; lastName: string }[] = [];
+    async function reloadUserChildren() {
+      const { data: childRows } = await supabase
+        .from('child_profiles')
+        .select('id, first_name, last_name')
+        .eq('parent_user_id', userId);
+      userChildren.length = 0;
+      for (const c of childRows ?? []) {
+        userChildren.push({
+          id: c['id'] as string,
+          firstName: String(c['first_name'] ?? '').trim().toLowerCase(),
+          lastName: String(c['last_name'] ?? '').trim().toLowerCase(),
+        });
+      }
+    }
+    await reloadUserChildren();
+
+    // Tombstones: members the user explicitly dismissed from "My Kids".
+    const { data: dismissedRows } = await supabase
+      .from('dismissed_provider_members')
+      .select('provider_id, external_member_id')
+      .eq('user_id', userId);
+    const dismissedMembers = new Set(
+      (dismissedRows ?? []).map(
+        (r) => `${r['provider_id']}:${r['external_member_id']}`,
+      ),
+    );
+
+    // Existing child ↔ provider member links (for this user's children).
+    const childIds = userChildren.map((c) => c.id);
+    const { data: linkRows } = childIds.length > 0
+      ? await supabase
+          .from('child_provider_members')
+          .select('child_profile_id, team_id, provider_id, external_member_id')
+          .in('child_profile_id', childIds)
+      : { data: [] as Array<Record<string, unknown>> };
+    const linkByExtId = new Map<string, string>(); // "provider:external" -> child_profile_id
+    for (const r of linkRows ?? []) {
+      const key = `${r['provider_id']}:${r['external_member_id']}`;
+      linkByExtId.set(key, r['child_profile_id'] as string);
+    }
 
     // Load provider_accounts metadata so we can read/update the member_id cache.
     const { data: providerAccountMeta } = await supabase
@@ -330,23 +362,100 @@ serve(async (req: Request) => {
         // Non-fatal: skip roster sync for this team and continue
       }
 
-      // Find which of the user's children is on this team (by name match).
-      // Multiple matches are joined with "&" (rare: siblings on same team).
+      // Find the player members on this team that belong to this user, creating
+      // or linking child_profile rows as needed. child_provider_members is the
+      // source of truth for the link — name is just a display property that can
+      // be renamed without breaking RSVP addressing.
       const matchedChildren: { id: string; firstName: string; lastName: string }[] = [];
+      let newlyCreatedChild = false;
       for (const rawMember of tsMembers) {
         const mf = extractFields(rawMember);
-        const mFirst = String(mf['first_name'] ?? '').trim().toLowerCase();
-        const mLast = String(mf['last_name'] ?? '').trim().toLowerCase();
-        if (!mFirst && !mLast) continue;
-        const hit = userChildren.find((c) => c.firstName === mFirst && c.lastName === mLast);
-        if (hit && !matchedChildren.some((m) => m.id === hit.id)) {
-          matchedChildren.push({
-            id: hit.id,
-            firstName: String(mf['first_name'] ?? ''),
-            lastName: String(mf['last_name'] ?? ''),
-          });
+        const memberExtId = mf['id'] ? String(mf['id']) : null;
+        if (!memberExtId) continue;
+
+        const mFirstRaw = String(mf['first_name'] ?? '').trim();
+        const mLastRaw = String(mf['last_name'] ?? '').trim();
+        if (!mFirstRaw && !mLastRaw) continue;
+
+        // Skip the parent's own member row (the parent isn't their own kid).
+        const memberUserId = mf['user_id'] ? String(mf['user_id']) : null;
+        if (memberUserId && memberUserId === tsUserId) continue;
+
+        // Skip coach/manager-only members.
+        if (mapRole(mf) !== 'PLAYER') continue;
+
+        // Skip members the user explicitly dismissed from "My Kids".
+        if (dismissedMembers.has(`${providerId}:${memberExtId}`)) continue;
+
+        const mFirstLc = mFirstRaw.toLowerCase();
+        const mLastLc = mLastRaw.toLowerCase();
+        const linkKey = `${providerId}:${memberExtId}`;
+        let childId = linkByExtId.get(linkKey) ?? null;
+
+        if (childId) {
+          // Already linked — keep the child's display name in sync with the provider.
+          await supabase
+            .from('child_profiles')
+            .update({
+              first_name: mFirstRaw,
+              last_name: mLastRaw,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', childId);
+        } else {
+          // Try to adopt an existing manual child_profile by exact name match,
+          // but only if that profile has no provider link yet (so we don't steal
+          // a kid that's already linked to another provider/team).
+          const nameMatch = userChildren.find(
+            (c) => c.firstName === mFirstLc && c.lastName === mLastLc,
+          );
+          const nameMatchIsUnlinked =
+            !!nameMatch && !Array.from(linkByExtId.values()).includes(nameMatch.id);
+
+          if (nameMatch && nameMatchIsUnlinked) {
+            childId = nameMatch.id;
+          } else {
+            const { data: newChild, error: childErr } = await supabase
+              .from('child_profiles')
+              .insert({
+                parent_user_id: userId,
+                first_name: mFirstRaw,
+                last_name: mLastRaw,
+              })
+              .select('id')
+              .single();
+            if (childErr || !newChild) {
+              console.warn(
+                `[sync-provider] failed to create child for member ${memberExtId}:`,
+                childErr,
+              );
+              continue;
+            }
+            childId = newChild['id'] as string;
+            newlyCreatedChild = true;
+          }
+
+          await supabase
+            .from('child_provider_members')
+            .upsert(
+              {
+                child_profile_id: childId,
+                team_id: teamId,
+                provider_id: providerId,
+                external_member_id: memberExtId,
+              },
+              { onConflict: 'provider_id,external_member_id' },
+            );
+          linkByExtId.set(linkKey, childId);
+        }
+
+        if (!matchedChildren.some((m) => m.id === childId)) {
+          matchedChildren.push({ id: childId, firstName: mFirstRaw, lastName: mLastRaw });
         }
       }
+
+      // Refresh local userChildren cache so later loops see freshly created kids.
+      if (newlyCreatedChild) await reloadUserChildren();
       const eventChildName = matchedChildren.length > 0
         ? matchedChildren.map((c) => c.firstName).join(' & ')
         : null;
@@ -554,6 +663,8 @@ serve(async (req: Request) => {
               position: mf['position_name'] ? String(mf['position_name']) : null,
               role: mapRole(mf),
               child_profile_id: matchedChild?.id ?? null,
+              provider_id: providerId,
+              external_id: mf['id'] ? String(mf['id']) : null,
             },
             { onConflict: 'team_id,player_first_name,player_last_name' },
           );

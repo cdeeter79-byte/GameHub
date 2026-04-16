@@ -21,15 +21,32 @@ export function useSchedule({ childIds = [] }: UseScheduleOptions = {}) {
     if (!user) { setIsLoading(false); return; }
     setIsLoading(true);
 
+    // Filtering by child means "show events for teams this child is on" —
+    // a kid might be on multiple teams, and two kids might share a team, so
+    // resolving through team membership is the only correct semantic.
+    let teamIds: string[] | null = null;
+    if (childIds.length > 0) {
+      const { data: linkRows } = await supabase
+        .from('child_provider_members')
+        .select('team_id')
+        .in('child_profile_id', childIds);
+      teamIds = Array.from(
+        new Set((linkRows ?? []).map((r) => r['team_id'] as string)),
+      );
+      if (teamIds.length === 0) {
+        setAllEvents([]);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     let query = supabase
       .from('events')
       .select('*, attendances(status)')
       .gte('start_at', new Date().toISOString())
       .order('start_at');
 
-    if (childIds.length > 0) {
-      query = query.in('child_profile_id', childIds);
-    }
+    if (teamIds) query = query.in('team_id', teamIds);
 
     const { data } = await query;
 
