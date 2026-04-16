@@ -10,6 +10,7 @@ import {
   Modal,
   SafeAreaView,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@gamehub/domain';
@@ -40,6 +41,7 @@ const screenWidth = Dimensions.get('window').width;
 const isMobileWeb = isWeb && screenWidth < 768;
 
 type LegalDoc = 'terms' | 'privacy' | null;
+type EmailMode = 'signin' | 'signup';
 
 const TERMS_TEXT = `TERMS OF SERVICE
 
@@ -126,9 +128,13 @@ const FEATURES = [
 ];
 
 export default function LoginScreen() {
-  const [loading, setLoading] = useState<'google' | 'apple' | null>(null);
+  const [loading, setLoading] = useState<'google' | 'apple' | 'email' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [legalDoc, setLegalDoc] = useState<LegalDoc>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [emailMode, setEmailMode] = useState<EmailMode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   async function handleGoogleSignIn() {
     setLoading('google');
@@ -168,6 +174,36 @@ export default function LoginScreen() {
       if (authError) setError(authError.message);
     } catch {
       setError('Sign in failed. Please try again.');
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleEmailSubmit() {
+    if (!email.trim() || !password.trim()) {
+      setError('Email and password are required.');
+      return;
+    }
+    setLoading('email');
+    setError(null);
+    try {
+      if (emailMode === 'signin') {
+        const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) { setError(authError.message); return; }
+        router.replace('/(parent)/dashboard');
+      } else {
+        const { error: authError } = await supabase.auth.signUp({ email, password });
+        if (authError) { setError(authError.message); return; }
+        setError(null);
+        // Show confirmation message instead of navigating
+        setEmail('');
+        setPassword('');
+        setEmailMode('signin');
+        setShowEmailForm(false);
+        setError('Account created! Check your email to confirm, then sign in.');
+      }
+    } catch {
+      setError('Something went wrong. Please try again.');
     } finally {
       setLoading(null);
     }
@@ -256,6 +292,19 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={[styles.btn, styles.btnEmail]}
+                onPress={() => { setShowEmailForm(true); setError(null); }}
+                disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with email"
+              >
+                <View style={styles.btnInner}>
+                  <Text style={styles.btnEmailIcon}>✉️</Text>
+                  <Text style={styles.btnEmailText}>Continue with Email</Text>
+                </View>
+              </TouchableOpacity>
+
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
                 <Text style={styles.dividerText}>or</Text>
@@ -300,6 +349,92 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </View>
+
+      {/* Email auth modal */}
+      <Modal
+        visible={showEmailForm}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowEmailForm(false)}
+      >
+        <SafeAreaView style={styles.modalRoot}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Sign in with Email</Text>
+            <TouchableOpacity
+              onPress={() => { setShowEmailForm(false); setError(null); }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              style={styles.modalClose}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.emailModalContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {error ? (
+              <View style={styles.errorBanner} accessibilityRole="alert">
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+            <View style={styles.emailToggle}>
+              <TouchableOpacity
+                style={[styles.toggleBtn, emailMode === 'signin' && styles.toggleBtnActive]}
+                onPress={() => setEmailMode('signin')}
+              >
+                <Text style={[styles.toggleText, emailMode === 'signin' && styles.toggleTextActive]}>
+                  Sign In
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleBtn, emailMode === 'signup' && styles.toggleBtnActive]}
+                onPress={() => setEmailMode('signup')}
+              >
+                <Text style={[styles.toggleText, emailMode === 'signup' && styles.toggleTextActive]}>
+                  Create Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={C.textTertiary}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              editable={!isLoading}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={C.textTertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete={emailMode === 'signup' ? 'new-password' : 'current-password'}
+              editable={!isLoading}
+            />
+            <TouchableOpacity
+              style={[styles.btn, styles.btnPrimary]}
+              onPress={handleEmailSubmit}
+              disabled={isLoading}
+              accessibilityRole="button"
+            >
+              {loading === 'email' ? (
+                <ActivityIndicator color={C.white} size="small" />
+              ) : (
+                <Text style={styles.btnPrimaryText}>
+                  {emailMode === 'signin' ? 'Sign In' : 'Create Account'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* Legal doc modal */}
       <Modal
@@ -479,6 +614,72 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 15,
     fontWeight: '500',
+  },
+
+  // ── Email button ──────────────────────────────────────────────────────────
+  btnEmail: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  btnEmailIcon: {
+    fontSize: 18,
+  },
+  btnEmailText: {
+    color: C.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // ── Email modal content ───────────────────────────────────────────────────
+  emailModalContent: {
+    padding: 24,
+    gap: 12,
+    paddingBottom: 48,
+  },
+  emailToggle: {
+    flexDirection: 'row',
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 4,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  toggleBtnActive: {
+    backgroundColor: C.primary,
+  },
+  toggleText: {
+    color: C.textSecondary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  toggleTextActive: {
+    color: C.white,
+    fontWeight: '600',
+  },
+  input: {
+    height: 48,
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    color: C.text,
+    fontSize: 15,
+  },
+  btnPrimary: {
+    backgroundColor: C.primary,
+    marginTop: 2,
+  },
+  btnPrimaryText: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // ── Divider ───────────────────────────────────────────────────────────────

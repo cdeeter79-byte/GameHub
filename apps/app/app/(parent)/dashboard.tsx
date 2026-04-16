@@ -231,7 +231,7 @@ export default function DashboardScreen() {
             </Text>
             <TouchableOpacity
               style={styles.emptyAction}
-              onPress={() => router.push('/(shared)/provider-connect/')}
+              onPress={() => router.push('/(parent)/provider-connect/')}
               accessibilityRole="button"
             >
               <Text style={styles.emptyActionText}>Connect a Platform</Text>
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
   },
   content: {
-    paddingBottom: 60,
+    paddingBottom: 100,
   },
 
   // ── Guest banner ─────────────────────────────────────────────────────────

@@ -14,6 +14,8 @@ const TAB_ICONS: Record<string, string> = {
   dashboard: '🏠',
   schedule: '📅',
   inbox: '✉️',
+  roster: '👥',
+  children: '🧒',
   teams: '👥',
   profile: '👤',
 };
@@ -22,6 +24,8 @@ const TAB_LABELS: Record<string, string> = {
   dashboard: 'Home',
   schedule: 'Schedule',
   inbox: 'Inbox',
+  roster: 'Roster',
+  children: 'My Kids',
   teams: 'Teams',
   profile: 'Profile',
 };
@@ -36,11 +40,25 @@ interface TabBarProps {
 export function TabBar({ state, descriptors, navigation, unreadInboxCount = 0 }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
+  // Only show the known top-level tab screens — exclude detail screens ([id]) and utility screens (new)
+  const TAB_ROUTES = new Set([
+    'dashboard',
+    'schedule/index',
+    'inbox',
+    'roster/index',
+    'children/index',
+    'profile',
+  ]);
+  const visibleRoutes = state.routes.filter((r) => TAB_ROUTES.has(r.name));
+
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {state.routes.map((route, index) => {
-        const isFocused = state.index === index;
-        const routeName = route.name.toLowerCase().replace('(', '').replace(')', '');
+      {visibleRoutes.map((route) => {
+        const originalIndex = state.routes.indexOf(route);
+        const isFocused = state.index === originalIndex;
+        // Normalize: strip parens, then take only the first path segment
+        // so 'schedule/index' → 'schedule', 'children/index' → 'children'
+        const routeName = route.name.toLowerCase().replace(/[()]/g, '').split('/')[0];
         const label = TAB_LABELS[routeName] ?? route.name;
         const icon = TAB_ICONS[routeName] ?? '●';
         const isInbox = routeName === 'inbox';

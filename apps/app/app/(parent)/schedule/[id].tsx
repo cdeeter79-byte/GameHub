@@ -142,6 +142,7 @@ export default function EventDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [rsvpLoading, setRsvpLoading] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -187,7 +188,11 @@ export default function EventDetailScreen() {
 
       // Kick off geocoding for the map
       if (loadedEvent.location) {
-        geocodeAddress(loadedEvent.location).then(setCoords);
+        setMapLoading(true);
+        geocodeAddress(loadedEvent.location).then((c) => {
+          setCoords(c);
+          setMapLoading(false);
+        });
       }
     } catch (err) {
       console.error('[EventDetail] load error:', err);
@@ -251,7 +256,13 @@ export default function EventDetailScreen() {
   const nextRsvp: RSVPStatus[] = [RSVPStatus.ATTENDING, RSVPStatus.NOT_ATTENDING, RSVPStatus.MAYBE];
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
+    >
       {/* ── Status banners ──────────────────────────────────────────── */}
       {event.isCanceled && (
         <View style={styles.cancelBanner}>
@@ -324,7 +335,12 @@ export default function EventDetailScreen() {
             </View>
 
             {/* Map preview — native only */}
-            {MapView != null && Marker != null && coords != null ? (
+            {mapLoading ? (
+              <View style={styles.mapPlaceholder}>
+                <ActivityIndicator color={C.primary} size="small" />
+                <Text style={styles.mapPlaceholderText}>Loading map…</Text>
+              </View>
+            ) : MapView != null && Marker != null && coords != null ? (
               <TouchableOpacity
                 style={styles.mapContainer}
                 onPress={() => openMaps(event.location)}
@@ -348,11 +364,11 @@ export default function EventDetailScreen() {
                   <Marker coordinate={coords} title={event.location.name} />
                 </MapView>
                 <View style={styles.mapOverlay}>
-                  <Text style={styles.mapOverlayText}>Open in Maps →</Text>
+                  <Text style={styles.mapOverlayText}>🗺  Open in Maps →</Text>
                 </View>
               </TouchableOpacity>
             ) : (
-              /* Fallback for web or when map unavailable */
+              /* Fallback for web or when geocoding unavailable */
               <TouchableOpacity
                 style={styles.mapsButton}
                 onPress={() => openMaps(event.location)}
@@ -369,17 +385,6 @@ export default function EventDetailScreen() {
           <View style={styles.card}>
             <Text style={styles.cardLabel}>NOTES</Text>
             <Text style={styles.notesText}>{event.notes}</Text>
-          </View>
-        )}
-
-        {/* Provider */}
-        {event.providerId && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>SOURCE</Text>
-            <View style={styles.cardRow}>
-              <Text style={styles.cardIcon}>🔗</Text>
-              <Text style={styles.cardSecondary}>{event.providerId}</Text>
-            </View>
           </View>
         )}
       </View>
@@ -422,13 +427,31 @@ export default function EventDetailScreen() {
           </View>
         </View>
       )}
+
+      {/* ── Source ──────────────────────────────────────────────────── */}
+      {event.providerId && (
+        <View style={[styles.cards, { marginBottom: 0 }]}>
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>SOURCE</Text>
+            <View style={styles.cardRow}>
+              <Text style={styles.cardIcon}>🔗</Text>
+              <View>
+                <Text style={styles.cardPrimary}>{event.providerId}</Text>
+                {event.externalId && (
+                  <Text style={styles.cardSecondary}>ID: {event.externalId}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
-  content: { paddingBottom: 48 },
+  content: { paddingBottom: 120 },
   centered: {
     flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24,
   },
@@ -492,6 +515,19 @@ const styles = StyleSheet.create({
   },
   mapOverlayText: { color: C.primaryLight, fontSize: 13, fontWeight: '600' },
 
+  mapPlaceholder: {
+    marginTop: 4,
+    height: 80,
+    backgroundColor: C.surfaceRaised,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  mapPlaceholderText: { color: C.textTertiary, fontSize: 13 },
   mapsButton: {
     marginTop: 4,
     backgroundColor: C.surfaceRaised,

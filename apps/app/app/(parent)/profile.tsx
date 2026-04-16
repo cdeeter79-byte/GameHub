@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@gamehub/domain';
 import { useAuth } from '../../src/hooks/useAuth';
@@ -90,23 +90,48 @@ export default function ProfileScreen() {
       {/* ── Account ─────────────────────────────────────────────────── */}
       <Section title="Account">
         <Row label="My Children" onPress={() => router.push('/(parent)/children/')} />
-        <Row label="Connected Platforms" onPress={() => router.push('/(shared)/provider-connect/')} />
-        <Row label="Notifications" onPress={() => router.push('/(shared)/notifications')} />
-        <Row label="Settings" onPress={() => router.push('/(shared)/settings')} />
+        <Row label="Connected Platforms" onPress={() => router.push('/(parent)/provider-connect/')} />
+        <Row label="Change Password" onPress={() => router.push('/(parent)/change-password')} />
+        <Row label="Notifications" onPress={() => router.push('/(parent)/notifications')} />
+        <Row label="Settings" onPress={() => router.push('/(parent)/settings')} />
       </Section>
 
       {/* ── Subscription ────────────────────────────────────────────── */}
       <Section title="Subscription">
-        <Row label="Upgrade to Premium" value="Free plan" onPress={() => {}} />
-        <Row label="Restore Purchases" onPress={() => {}} />
+        <Row
+          label="Upgrade to Premium"
+          value="Free plan"
+          onPress={() =>
+            Alert.alert(
+              'Upgrade to Premium',
+              'Premium unlocks unlimited platforms, RSVP write-back, push notifications, and more.\n\nIn-app purchase coming soon.',
+              [{ text: 'OK' }],
+            )
+          }
+        />
+        <Row
+          label="Restore Purchases"
+          onPress={() =>
+            Alert.alert('Restore Purchases', 'No purchases found for this account.', [{ text: 'OK' }])
+          }
+        />
       </Section>
 
       {/* ── Legal ───────────────────────────────────────────────────── */}
       <Section title="Legal & Privacy">
-        <Row label="Privacy Policy" onPress={() => {}} />
-        <Row label="Terms of Service" onPress={() => {}} />
-        <Row label="Your Privacy Data" onPress={() => {}} />
-        <Row label="Delete Account" onPress={() => {}} destructive />
+        <Row label="Privacy Policy" onPress={() => Linking.openURL('https://gamehubapp.com/privacy')} />
+        <Row label="Terms of Service" onPress={() => Linking.openURL('https://gamehubapp.com/terms')} />
+        <Row
+          label="Your Privacy Data"
+          onPress={() =>
+            Alert.alert(
+              'Your Privacy Data',
+              'To request a copy or deletion of your personal data, contact us at privacy@gamehubapp.com.',
+              [{ text: 'OK' }],
+            )
+          }
+        />
+        <Row label="Delete Account" onPress={() => Alert.alert('Delete Account', 'Please contact support@gamehubapp.com to delete your account and all associated data.', [{ text: 'OK' }])} destructive />
       </Section>
 
       {/* ── Sign out ────────────────────────────────────────────────── */}
@@ -121,7 +146,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
-  content: { paddingBottom: 60 },
+  content: { paddingBottom: 120 },
 
   // Identity
   identity: {

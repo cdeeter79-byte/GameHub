@@ -14,7 +14,8 @@ import type {
 } from '../base';
 import type { EventType, MemberRole } from '@gamehub/domain';
 
-const BASE_URL = 'https://api.teamsnap.com/v3';
+// Official API base (confirmed from teamsnap-javascript-sdk source)
+const BASE_URL = 'https://apiv3.teamsnap.com';
 const AUTH_URL = 'https://auth.teamsnap.com/oauth/authorize';
 const TOKEN_URL = 'https://auth.teamsnap.com/oauth/token';
 
@@ -28,17 +29,27 @@ function extractFields(item: Record<string, unknown>): Record<string, unknown> {
   return data;
 }
 
-function mapEventType(tsType: string): EventType {
-  if (tsType === 'game') return 'GAME';
-  if (tsType === 'practice') return 'PRACTICE';
-  if (tsType === 'meeting') return 'MEETING';
+/**
+ * TeamSnap events use a boolean `is_game` field — there is no `event_type` enum.
+ * Practices can be inferred from `is_game: false` + name check.
+ */
+function mapEventType(isGame: boolean, name: string): EventType {
+  if (isGame) return 'GAME';
+  const lower = name.toLowerCase();
+  if (lower.includes('practice')) return 'PRACTICE';
+  if (lower.includes('meeting') || lower.includes('team meeting')) return 'MEETING';
+  if (lower.includes('tournament')) return 'TOURNAMENT';
   return 'OTHER';
 }
 
-function mapRole(role: string): MemberRole {
-  if (role === 'manager' || role === 'owner') return 'MANAGER';
-  if (role === 'coach' || role === 'assistant_coach') return 'COACH';
-  if (role === 'non_player') return 'PARENT';
+/**
+ * TeamSnap members have boolean flags `is_manager`, `is_owner`, `is_non_player`
+ * rather than a single `role` string. Derive the GameHub role from those flags.
+ */
+function mapRole(f: Record<string, unknown>): MemberRole {
+  if (f['is_owner'] === true) return 'MANAGER';
+  if (f['is_manager'] === true) return 'MANAGER';
+  if (f['is_non_player'] === true) return 'PARENT';
   return 'PLAYER';
 }
 
@@ -164,12 +175,15 @@ export const teamSnapAdapter: ProviderAdapter = {
     );
     return (data.collection?.items ?? []).map((item) => {
       const f = extractFields(item as Record<string, unknown>);
+      const name = String(f['name'] ?? 'Event');
       const startAt = new Date(String(f['start_date'] ?? Date.now()));
       const endAt = f['end_date'] ? new Date(String(f['end_date'])) : new Date(startAt.getTime() + 7200000);
+      // TeamSnap uses is_game (boolean) — no event_type string field
+      const isGame = f['is_game'] === true;
       return {
         externalId: String(f['id'] ?? ''),
-        title: String(f['name'] ?? 'Event'),
-        type: mapEventType(String(f['event_type'] ?? '')),
+        title: name,
+        type: mapEventType(isGame, name),
         startAt,
         endAt,
         opponent: f['opponent_name'] ? String(f['opponent_name']) : undefined,
@@ -190,8 +204,9 @@ export const teamSnapAdapter: ProviderAdapter = {
   },
 
   async fetchRoster(ctx, teamExternalId) {
+    // TeamSnap v3: roster lives at /members?team_id=xxx (not /team_memberships)
     const data = await tsGet<{ collection: { items: unknown[] } }>(
-      '/team_memberships',
+      '/members',
       ctx,
       { team_id: teamExternalId },
     );
@@ -199,9 +214,10 @@ export const teamSnapAdapter: ProviderAdapter = {
       const f = extractFields(item as Record<string, unknown>);
       return {
         externalId: String(f['id'] ?? ''),
-        firstName: String(f['first'] ?? ''),
-        lastName: String(f['last'] ?? ''),
-        role: mapRole(String(f['role'] ?? '')),
+        // API returns snake_case fields; SDK converts to camelCase but raw API uses first_name/last_name
+        firstName: String(f['first_name'] ?? ''),
+        lastName: String(f['last_name'] ?? ''),
+        role: mapRole(f),
         jerseyNumber: f['jersey_number'] ? String(f['jersey_number']) : undefined,
         position: f['position'] ? String(f['position']) : undefined,
       } satisfies ExternalRosterMember;

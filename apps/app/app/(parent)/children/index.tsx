@@ -1,5 +1,7 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import { useChildren } from '../../../src/hooks/useChildren';
 import type { ChildProfile } from '@gamehub/domain';
 
@@ -63,7 +65,9 @@ function ChildCard({ item }: { item: ChildProfile }) {
 }
 
 export default function ChildrenScreen() {
-  const { children, isLoading } = useChildren();
+  const { children, isLoading, refresh } = useChildren();
+
+  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   return (
     <View style={styles.root}>
