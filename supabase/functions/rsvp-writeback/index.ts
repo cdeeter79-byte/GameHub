@@ -112,7 +112,7 @@ serve(async (req) => {
     // ── 1. Look up event ───────────────────────────────────────────────────────
     const { data: eventRow } = await adminClient
       .from('events')
-      .select('external_id, provider_id, team_id')
+      .select('external_id, provider_id, team_id, child_profile_id')
       .eq('id', eventId)
       .single();
 
@@ -147,129 +147,167 @@ serve(async (req) => {
 
     const accessToken = String(providerAccount.access_token);
     const metadata = (providerAccount.metadata ?? {}) as Record<string, unknown>;
-    const memberCacheKey = `member_id_${tsTeamId}`;
 
-    // ── 4. Resolve user's TeamSnap member_id (cached or fetched fresh) ─────────
-    let tsMemberId: string | null = metadata[memberCacheKey] ? String(metadata[memberCacheKey]) : null;
+    // ── 4. Collect every TeamSnap member this RSVP applies to ────────────────
+    // Team events can apply to more than one of the user's kids (siblings on
+    // one team). RSVP-ing "Going" from the app means "all my kids on this team
+    // are going" — so we write availability for each linked member, not just
+    // one. Fall back to the parent's own member only when no kids are linked.
+    const memberIdsToWrite: string[] = [];
 
-    if (!tsMemberId) {
-      // GET /me → TeamSnap user_id
-      const meData = await tsGet('/me', accessToken);
-      const meItems = meData.collection?.items ?? [];
-      const meFields = meItems.length > 0 ? extractFields(meItems[0] as Record<string, unknown>) : {};
-      const tsUserId = meFields['id'] ? String(meFields['id']) : null;
-      if (!tsUserId) throw new Error('Could not get TeamSnap user ID from /me');
+    const { data: myKids } = await adminClient
+      .from('child_profiles')
+      .select('id')
+      .eq('parent_user_id', user.id);
+    const kidIds = (myKids ?? []).map((k) => k['id'] as string);
 
-      // GET /members/search?team_id=&user_id= → member record
-      const membersData = await tsGet('/members/search', accessToken, {
-        team_id: tsTeamId,
-        user_id: tsUserId,
-      });
-      const memberItems = membersData.collection?.items ?? [];
-      if (memberItems.length > 0) {
-        const f = extractFields(memberItems[0] as Record<string, unknown>);
-        tsMemberId = f['id'] ? String(f['id']) : null;
-        // Cache for next time
-        if (tsMemberId) {
-          await adminClient
-            .from('provider_accounts')
-            .update({ metadata: { ...metadata, [memberCacheKey]: tsMemberId } })
-            .eq('user_id', user.id)
-            .eq('provider_id', 'teamsnap');
+    if (kidIds.length > 0) {
+      const { data: linkRows } = await adminClient
+        .from('child_provider_members')
+        .select('external_member_id, child_profile_id')
+        .eq('team_id', eventRow.team_id)
+        .eq('provider_id', 'teamsnap')
+        .in('child_profile_id', kidIds);
+      for (const row of linkRows ?? []) {
+        const mid = row['external_member_id'] ? String(row['external_member_id']) : null;
+        if (mid && !memberIdsToWrite.includes(mid)) {
+          memberIdsToWrite.push(mid);
+          console.log(
+            `[rsvp-writeback] Will write for member=${mid} (child=${row['child_profile_id']})`,
+          );
         }
       }
     }
 
-    if (!tsMemberId) {
-      return json({ error: 'Could not resolve TeamSnap member ID for this user on this team' }, 400);
+    // Legacy fallback for pre-migration data.
+    if (memberIdsToWrite.length === 0 && eventRow.child_profile_id) {
+      const { data: rosterRow } = await adminClient
+        .from('roster_contacts')
+        .select('external_id')
+        .eq('team_id', eventRow.team_id)
+        .eq('child_profile_id', eventRow.child_profile_id)
+        .eq('provider_id', 'teamsnap')
+        .maybeSingle();
+      if (rosterRow?.external_id) memberIdsToWrite.push(String(rosterRow.external_id));
     }
 
-    // ── 5. Find existing availability for this member + event ─────────────────
-    const availData = await tsGet('/availabilities/search', accessToken, {
-      team_id: tsTeamId,
-      member_id: tsMemberId,
-    });
-    const availItems = (availData.collection?.items ?? []) as Array<Record<string, unknown>>;
+    // Last-resort fallback: the parent's own member (teams where parent is the
+    // player, e.g., adult leagues). Only used when no kid is linked to this team.
+    if (memberIdsToWrite.length === 0) {
+      const memberCacheKey = `member_id_${tsTeamId}`;
+      let parentMid = metadata[memberCacheKey] ? String(metadata[memberCacheKey]) : null;
 
-    // Log what availabilities we found so we can debug member/event mapping
-    console.log(`[rsvp-writeback] Found ${availItems.length} availabilities for member=${tsMemberId}`);
-    for (const item of availItems.slice(0, 5)) {
-      const f = extractFields(item);
-      console.log(`  avail id=${f['id']} event_id=${f['event_id']} status_code=${f['status_code']} href=${item['href']}`);
+      if (!parentMid) {
+        const meData = await tsGet('/me', accessToken);
+        const meItems = meData.collection?.items ?? [];
+        const meFields = meItems.length > 0 ? extractFields(meItems[0] as Record<string, unknown>) : {};
+        const tsUserId = meFields['id'] ? String(meFields['id']) : null;
+        if (tsUserId) {
+          const membersData = await tsGet('/members/search', accessToken, {
+            team_id: tsTeamId,
+            user_id: tsUserId,
+          });
+          const memberItems = membersData.collection?.items ?? [];
+          if (memberItems.length > 0) {
+            const f = extractFields(memberItems[0] as Record<string, unknown>);
+            parentMid = f['id'] ? String(f['id']) : null;
+            if (parentMid) {
+              await adminClient
+                .from('provider_accounts')
+                .update({ metadata: { ...metadata, [memberCacheKey]: parentMid } })
+                .eq('user_id', user.id)
+                .eq('provider_id', 'teamsnap');
+            }
+          }
+        }
+      }
+
+      if (parentMid) {
+        memberIdsToWrite.push(parentMid);
+        console.log(`[rsvp-writeback] No kids linked; falling back to parent member=${parentMid}`);
+      }
     }
 
-    const existingAvail = availItems.find((item) => {
-      const f = extractFields(item);
-      return String(f['event_id']) === tsEventId;
-    });
+    if (memberIdsToWrite.length === 0) {
+      return json({ error: 'Could not resolve any TeamSnap member for this RSVP' }, 400);
+    }
 
-    // ── 6. PUT to update or POST to create ────────────────────────────────────
-    let writeOk = false;
-    let writeError = '';
+    // ── 5. Write availability for each member ────────────────────────────────
+    async function writeOneAvailability(memberId: string): Promise<{ ok: boolean; error: string }> {
+      const availData = await tsGet('/availabilities/search', accessToken, {
+        team_id: tsTeamId,
+        member_id: memberId,
+      });
+      const availItems = (availData.collection?.items ?? []) as Array<Record<string, unknown>>;
+      const existing = availItems.find((item) => {
+        const f = extractFields(item);
+        return String(f['event_id']) === tsEventId;
+      });
 
-    if (existingAvail) {
-      // Use href directly — more reliable than constructing URL from extracted id
-      const availHref = existingAvail['href'] as string | undefined;
-      const f = extractFields(existingAvail);
-      const availUrl = availHref ?? `${TS_BASE}/availabilities/${f['id']}`;
-      console.log(`[rsvp-writeback] PUT ${availUrl} → status_code=${statusCode}`);
-      const res = await tsWrite(availUrl, 'PUT', accessToken, { status_code: statusCode });
-      const resBody = await res.text();
-      writeOk = res.ok;
-      writeError = resBody;
-      console.log(`[rsvp-writeback] PUT response ${res.status}:`, resBody);
+      if (existing) {
+        const availHref = existing['href'] as string | undefined;
+        const f = extractFields(existing);
+        const availUrl = availHref ?? `${TS_BASE}/availabilities/${f['id']}`;
+        console.log(`[rsvp-writeback] PUT ${availUrl} (member=${memberId}) → status_code=${statusCode}`);
+        const res = await tsWrite(availUrl, 'PUT', accessToken, { status_code: statusCode });
+        const body = await res.text();
+        if (!res.ok) return { ok: false, error: body };
 
-      // Re-GET the availability to verify TeamSnap actually persisted our value.
-      // The PUT response is just a template echo; only a follow-up fetch shows truth.
-      if (writeOk) {
+        // Verify via follow-up GET since PUT just echoes the template.
         try {
           const verifyRes = await fetch(availUrl, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: 'application/vnd.collection+json',
-            },
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.collection+json' },
           });
           const verifyBody = await verifyRes.text();
-          console.log(`[rsvp-writeback] VERIFY GET ${verifyRes.status}:`, verifyBody);
           const parsed = JSON.parse(verifyBody) as { collection?: { items?: unknown[] } };
           const items = parsed.collection?.items ?? [];
           if (items.length > 0) {
             const applied = extractFields(items[0] as Record<string, unknown>);
             const stored = applied['status_code'];
-            console.log(`[rsvp-writeback] Stored status_code=${stored} (expected ${statusCode})`);
+            console.log(`[rsvp-writeback] member=${memberId} stored status_code=${stored} (expected ${statusCode})`);
             if (stored !== statusCode) {
-              writeOk = false;
-              writeError = `TeamSnap stored status_code=${stored} (expected ${statusCode})`;
+              return { ok: false, error: `stored=${stored} expected=${statusCode}` };
             }
           }
         } catch (err) {
           console.warn('[rsvp-writeback] verify fetch failed:', err);
         }
+        return { ok: true, error: '' };
+      } else {
+        console.log(`[rsvp-writeback] POST new availability for member=${memberId}`);
+        const res = await tsWrite(`${TS_BASE}/availabilities`, 'POST', accessToken, {
+          team_id: Number(tsTeamId),
+          member_id: Number(memberId),
+          event_id: Number(tsEventId),
+          status_code: statusCode,
+        });
+        const body = await res.text();
+        console.log(`[rsvp-writeback] POST member=${memberId} response ${res.status}`);
+        return { ok: res.ok, error: res.ok ? '' : body };
       }
-    } else {
-      console.log(`[rsvp-writeback] No existing avail found for event=${tsEventId}, POSTing new one`);
-      const res = await tsWrite(`${TS_BASE}/availabilities`, 'POST', accessToken, {
-        team_id: Number(tsTeamId),
-        member_id: Number(tsMemberId),
-        event_id: Number(tsEventId),
-        status_code: statusCode,
-      });
-      const resBody = await res.text();
-      writeOk = res.ok;
-      writeError = resBody;
-      console.log(`[rsvp-writeback] POST response ${res.status}:`, resBody.substring(0, 300));
     }
 
-    if (!writeOk) console.error('[rsvp-writeback] TeamSnap write failed:', writeError);
+    const writeErrors: string[] = [];
+    for (const mid of memberIdsToWrite) {
+      const { ok, error } = await writeOneAvailability(mid);
+      if (!ok) writeErrors.push(`member=${mid}: ${error}`);
+    }
+    const allOk = writeErrors.length === 0;
+    if (!allOk) console.error('[rsvp-writeback] TeamSnap write failed:', writeErrors);
 
-    // ── 7. Update attendances.wrote_back ──────────────────────────────────────
+    // ── 6. Update attendances.wrote_back ─────────────────────────────────────
     await adminClient
       .from('attendances')
-      .update({ wrote_back: writeOk, updated_at: new Date().toISOString() })
+      .update({ wrote_back: allOk, updated_at: new Date().toISOString() })
       .eq('event_id', eventId)
       .eq('user_id', user.id);
 
-    return json({ success: true, wroteBack: writeOk, ...(writeOk ? {} : { error: writeError }) });
+    return json({
+      success: true,
+      wroteBack: allOk,
+      membersWritten: memberIdsToWrite.length,
+      ...(allOk ? {} : { error: writeErrors.join('; ') }),
+    });
 
   } catch (err) {
     console.error('[rsvp-writeback] Unhandled error:', err);
