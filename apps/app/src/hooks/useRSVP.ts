@@ -2,6 +2,30 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@gamehub/domain';
 import { RSVPStatus } from '@gamehub/domain';
 
+async function triggerTeamSnapWriteback(eventId: string, status: RSVPStatus, accessToken: string) {
+  const supabaseUrl = process.env['EXPO_PUBLIC_SUPABASE_URL'] ?? '';
+  if (!supabaseUrl) return;
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/rsvp-writeback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ eventId, status }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn('[RSVP writeback] failed:', data);
+    } else {
+      const data = await res.json();
+      console.log('[RSVP writeback] success, wroteBack:', data.wroteBack);
+    }
+  } catch (err) {
+    console.warn('[RSVP writeback] network error:', err);
+  }
+}
+
 // Maps our three canonical statuses to each provider's terminology.
 // Used when writing back to the source app (future implementation).
 export const PROVIDER_RSVP_MAP: Record<string, Record<RSVPStatus, string>> = {
@@ -38,19 +62,32 @@ export function useRSVP() {
 
       console.log(`[RSVP] ${status} → "${providerValue}" for provider "${options?.providerId ?? 'none'}"`);
 
-      const { error } = await supabase.from('attendances').upsert(
-        {
-          event_id: eventId,
-          user_id: user.id,
-          child_profile_id: options?.childProfileId ?? null,
-          status,
-          local_intent: status,
-          wrote_back: false,
-          mismatch_detected: false,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'event_id,user_id,child_profile_id' },
-      );
+      // Delete-then-insert avoids the NULL child_profile_id conflict:
+      // PostgreSQL treats NULL != NULL so upsert never resolves (event,user,NULL) conflicts.
+      await supabase
+        .from('attendances')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('user_id', user.id);
+
+      const { error } = await supabase.from('attendances').insert({
+        event_id: eventId,
+        user_id: user.id,
+        child_profile_id: options?.childProfileId ?? null,
+        status,
+        local_intent: status,
+        wrote_back: false,
+        mismatch_detected: false,
+        updated_at: new Date().toISOString(),
+      });
+
+      if (!error && options?.providerId === 'teamsnap') {
+        const session = (await supabase.auth.getSession()).data.session;
+        if (session) {
+          // Fire-and-forget — UI already reflects the local status.
+          triggerTeamSnapWriteback(eventId, status, session.access_token);
+        }
+      }
 
       return !error;
     } catch {

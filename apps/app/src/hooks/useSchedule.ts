@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '@gamehub/domain';
 import { mergeEvents, filterEvents } from '@gamehub/domain';
 import type { Event } from '@gamehub/domain';
@@ -39,6 +40,8 @@ export function useSchedule({ childIds = [] }: UseScheduleOptions = {}) {
       sport: row['sport'] as Sport | undefined,
       teamId: row['team_id'] as string,
       teamName: (row['team_name'] as string) ?? '',
+      childProfileId: (row['child_profile_id'] as string | null) ?? undefined,
+      childName: (row['child_name'] as string | null) ?? undefined,
       startAt: row['start_at'] as string,   // ISO 8601 string
       endAt: row['end_at'] as string,         // ISO 8601 string
       isCanceled: (row['is_canceled'] as boolean) ?? false,
@@ -57,6 +60,12 @@ export function useSchedule({ childIds = [] }: UseScheduleOptions = {}) {
   }, [user, childIds.join(',')]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchAll();
+    }, [fetchAll]),
+  );
 
   const sports = [...new Set(allEvents.map((e) => e.sport).filter(Boolean))] as Sport[];
 

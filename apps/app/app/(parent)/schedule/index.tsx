@@ -124,12 +124,21 @@ function ScheduleCard({
         </View>
       </View>
 
-      <Text
-        style={[styles.title, event.isCanceled && styles.titleCanceled]}
-        numberOfLines={2}
-      >
-        {event.title}
-      </Text>
+      <View style={styles.titleRow}>
+        <Text
+          style={[styles.title, event.isCanceled && styles.titleCanceled]}
+          numberOfLines={2}
+        >
+          {event.title}
+        </Text>
+        {event.childName && (
+          <View style={styles.childPill}>
+            <Text style={styles.childPillText} numberOfLines={1}>
+              👤 {event.childName}
+            </Text>
+          </View>
+        )}
+      </View>
 
       <Text style={styles.teamText} numberOfLines={1}>🏷  {event.teamName}</Text>
 
@@ -647,8 +656,23 @@ const styles = StyleSheet.create({
   typePillIcon: { fontSize: 11 },
   typePillLabel: { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
 
-  title: { color: C.text, fontSize: 18, fontWeight: '700', lineHeight: 24, letterSpacing: -0.2 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  title: {
+    color: C.text, fontSize: 18, fontWeight: '700', lineHeight: 24, letterSpacing: -0.2,
+    flex: 1,
+  },
   titleCanceled: { textDecorationLine: 'line-through', color: C.textSecondary },
+  childPill: {
+    backgroundColor: C.primaryBg,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: C.primary,
+    marginTop: 2,
+    maxWidth: 140,
+  },
+  childPillText: { color: C.primaryLight, fontSize: 11, fontWeight: '700' },
   teamText: { color: C.textSecondary, fontSize: 13 },
   locationText: { color: C.textSecondary, fontSize: 13, marginTop: 2 },
 
